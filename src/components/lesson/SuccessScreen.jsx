@@ -75,7 +75,6 @@ const SuccessScreen = ({ onBackToMap }) => {
           justifyContent: 'center',
           textAlign: 'center',
           overflow: 'hidden',
-          position: 'relative',
         }}
       >
         {/* Animated Background Mesh */}
