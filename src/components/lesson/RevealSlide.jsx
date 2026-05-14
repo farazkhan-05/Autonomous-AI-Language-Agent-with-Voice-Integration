@@ -1,11 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, Fade, Paper, Chip } from '@mui/material';
-import { Eye, Volume2, Sparkles, Lightbulb, ArrowRight, Star } from 'lucide-react';
+import { Box, Typography, Button, Fade, Paper, Chip, CircularProgress } from '@mui/material';
+import { Eye, Volume2, Sparkles, Lightbulb, ArrowRight, Star, Bot } from 'lucide-react';
+import { explainGrammar } from '../../utils/gemini';
 
 const RevealSlide = ({ data, onNext }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const [particles, setParticles] = useState([]);
   const [soundWaves, setSoundWaves] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState(null);
+
+  const handleAskAi = async () => {
+    try {
+      setIsAiLoading(true);
+      const result = await explainGrammar(data.answer, data.question);
+      setAiExplanation(result);
+    } catch (error) {
+      console.error(error);
+      setAiExplanation(error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   // Trigger celebration particles on reveal
   useEffect(() => {
@@ -423,6 +439,82 @@ const RevealSlide = ({ data, onNext }) => {
                 </Box>
               </Box>
             </Paper>
+
+            {/* AI Explanation Section */}
+            {aiExplanation ? (
+              <Paper 
+                elevation={0}
+                sx={{ 
+                  background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(33, 203, 243, 0.05) 100%)',
+                  borderRadius: '20px',
+                  p: { xs: 2.5, md: 3 },
+                  mb: 4,
+                  border: '2px solid rgba(33, 150, 243, 0.2)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '5px',
+                    height: '100%',
+                    background: 'linear-gradient(180deg, #2196F3 0%, #21CBF3 100%)',
+                  },
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, pl: 1 }}>
+                  <Box
+                    sx={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #2196F3 0%, #21CBF3 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
+                    }}
+                  >
+                    <Bot size={22} color="white" />
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#2196F3', fontWeight: 800, mb: 0.5, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      AI Tutor Explanation
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: 'text.primary', lineHeight: 1.7, fontSize: { xs: '0.95rem', md: '1rem' }, whiteSpace: 'pre-wrap' }}>
+                      {aiExplanation}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
+            ) : (
+              <Button
+                variant="outlined"
+                onClick={handleAskAi}
+                disabled={isAiLoading}
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  mb: 3,
+                  borderRadius: '16px',
+                  borderWidth: '2px',
+                  borderColor: 'rgba(33, 150, 243, 0.5)',
+                  color: '#2196F3',
+                  fontWeight: 700,
+                  fontSize: '1rem',
+                  textTransform: 'none',
+                  '&:hover': {
+                    borderWidth: '2px',
+                    borderColor: '#2196F3',
+                    background: 'rgba(33, 150, 243, 0.05)',
+                  }
+                }}
+              >
+                {isAiLoading ? <CircularProgress size={24} sx={{ color: '#2196F3' }} /> : <><Bot size={22} style={{ marginRight: 8 }} /> Ask AI to Explain Grammar</>}
+              </Button>
+            )}
 
             {/* Continue Button */}
             <Button 

@@ -3,6 +3,7 @@ import { AppBar, Toolbar, Typography, Container, Box, IconButton, useScrollTrigg
 import { Link, useLocation } from 'react-router-dom';
 import { Sparkles, Heart, Zap, Moon, Sun, LogOut, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import GlobalChatbot from '../chat/GlobalChatbot';
 
 // Hide navbar on scroll
 function HideOnScroll({ children }) {
@@ -532,6 +533,9 @@ const Layout = ({ children, darkMode, onToggleDarkMode }) => {
           ))}
         </Box>
       </Box>
+
+      {/* Global AI Chatbot */}
+      <GlobalChatbot darkMode={darkMode} onToggleTheme={onToggleDarkMode} />
     </Box>
   );
 };
