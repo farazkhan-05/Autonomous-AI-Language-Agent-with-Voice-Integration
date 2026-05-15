@@ -1,46 +1,86 @@
-# SpanishAmigo
+# Autonomous AI Language Agent with Voice Integration
 
-A modern, gamified Spanish learning web app with interactive lessons, quizzes, and progress tracking.
+A Spanish learning web application built with React and the Google Gemini SDK. The AI in this app goes beyond standard chatbot behavior. It listens to your voice, speaks back in Spanish, understands your progress, and can control the interface itself based on what you say.
 
----
-
-## ✨ Features
-
-* **Interactive Lessons** - Context slides, reveal cards, and practice quizzes
-* **Gamified Progress** - Visual journey map with unlockable lessons and an XP system
-* **User Authentication** - Secure Google Sign-In powered by Firebase Authentication
-* **Cloud Sync** - Progress is securely saved to the cloud using Firestore and synced across devices
-* **Dark Mode** - Toggle between light and dark themes with persistent preferences
-* **Responsive Design** - Works seamlessly on mobile, tablet, and desktop
-* **Glassmorphism UI** - Modern frosted-glass effects and smooth gradient animations
-* **Celebration Effects** - Confetti explosions and animations on lesson completion
+**Live Demo:** [spanishamigo.vercel.app](https://spanishamigo.vercel.app/)
 
 ---
 
-## 🚀 Installation
+## What I built and why
+
+I have been picking up Spanish for a while and got frustrated with existing apps feeling too rigid. So I decided to build my own, and used it as an opportunity to implement three AI engineering concepts I had been curious about: LLM Function Calling, Voice User Interfaces, and Retrieval-Augmented Generation. The language learning context gave me a real product to build around rather than an isolated proof of concept.
+
+---
+
+## Technical highlights
+
+### LLM Function Calling (Agentic AI)
+
+The AI tutor does not just respond with text. It can take actions inside the application.
+
+If you type something like "my eyes hurt, can you turn the lights off", the app switches to dark mode on its own. Under the hood, a `toggle_dark_mode` tool is declared using an OpenAPI JSON schema and passed to the Gemini model via the `tools` parameter. When the model detects the intent, it returns a `functionCall` payload instead of plain text. The React app intercepts that, fires the callback, updates global state, and returns a `functionResponse` so the model can confirm the action naturally in the conversation.
+
+This is the core pattern behind what the industry calls Agentic AI and LLM Function Calling.
+
+### Voice User Interface (VUI)
+
+The app supports full bidirectional voice with no third-party audio APIs and no added cost.
+
+Speech-to-Text is handled by `window.SpeechRecognition` configured to `lang: 'es-ES'`, which tunes the browser's acoustic model for Spanish phonetics. Text-to-Speech uses `SpeechSynthesisUtterance` with logic that maps over `window.speechSynthesis.getVoices()` at runtime to detect and lock in a native Spanish voice rather than defaulting to a generic English one. Before any AI response reaches the audio engine, a Regex pipeline strips Markdown tokens like asterisks and hashes so the spoken output sounds clean and natural.
+
+Everything runs natively in the browser through the HTML5 Web Speech API.
+
+### Retrieval-Augmented Generation (RAG)
+
+The tutor is context-aware from the moment you open it. It knows your name and exactly how many lessons you have completed before you say a word.
+
+When the Gemini chat session initialises, the app harvests the user's display name from Firebase Authentication and their lesson progress from a React Context. That data is injected directly into the model's `systemInstruction` payload at runtime. The model is then prompt-engineered to reference this information naturally in conversation, congratulating you on real milestones and nudging you toward your next lesson.
+
+This follows the same principle as Retrieval-Augmented Generation. The retrieval step is reading live application state rather than querying a vector database, which keeps the architecture lightweight and fully client-side.
+
+---
+
+## Features
+
+- Five structured Spanish lessons covering greetings, verbs, dining, navigation, and real-world conversation scenarios
+- Progressive lesson locking so content unlocks as you complete each stage
+- Google Sign-In via Firebase Authentication
+- Progress saved to Cloud Firestore and synced across devices
+- Dark mode toggle controllable manually or through a voice command to the AI
+- Neo-Brutalist UI design with flat colors, thick borders, and offset block shadows
+- Fully responsive on mobile and desktop
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend Framework | React 18, Vite |
+| Routing | React Router DOM v6 |
+| UI Component Library | Material UI (MUI v5) |
+| Icons | Lucide React |
+| AI Model | Google Gemini via `@google/generative-ai` SDK |
+| AI Techniques | Function Calling, Prompt Engineering, Multi-turn Chat, RAG |
+| Voice | HTML5 Web Speech API (SpeechRecognition + SpeechSynthesis) |
+| Authentication | Firebase Authentication (Google OAuth) |
+| Database | Cloud Firestore |
+| Deployment | Vercel |
+
+---
+
+## Running locally
 
 ```bash
-# Install dependencies
+git clone https://github.com/farazkhan-05/spanishAmigo.git
+cd spanishAmigo
 npm install
-
-# Install additional packages
-npm install lucide-react react-confetti firebase
-
-# Start development server
 npm run dev
 ```
 
-### 🔐 Environment Setup
+### Environment setup
 
-This project uses Firebase. You must create a `.env.local` file in the root directory and add your Firebase configuration keys.
-
-Create a file named:
-
-```
-.env.local
-```
-
-Add the following template and replace the values with your own Firebase project credentials:
+Create a `.env.local` file in the project root with the following keys:
 
 ```env
 VITE_FIREBASE_API_KEY=your_api_key
@@ -49,109 +89,53 @@ VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
+VITE_GEMINI_API_KEY=your_gemini_api_key
 ```
 
-After adding the environment variables, restart the development server if it is already running.
+A free Gemini API key is available at [aistudio.google.com](https://aistudio.google.com/).
 
 ---
 
-## 🧭 Usage
+## Project Structure
 
-The app consists of three main screens:
-
-### Course Map
-
-Shows your learning journey with locked and unlocked lessons.
-
-Navigate to: `/`
-
-### Lesson Player
-
-Interactive lessons with slides and quizzes.
-
-Navigate to: `/lesson/:id`
-
-### Success Screen
-
-A celebration page displayed after completing a lesson.
-
-You can now click **Sign In** (Google) to securely log in and sync your progress across devices.
-
-Dark Mode can be toggled using the moon/sun icon in the navbar. Your preference is automatically saved.
-
----
-
-## 🗂 Project Structure
-
-```text
+```
 src/
 ├── components/
-│   ├── common/
+│   ├── chat/
+│   │   └── GlobalChatbot.jsx       # AI tutor: Function Calling, STT, TTS, RAG context injection
 │   └── layout/
-│       └── Layout.jsx              # Main layout with navbar and footer
+│       └── Layout.jsx              # Navbar, footer, global dark mode state
 ├── context/
-│   ├── AuthContext.jsx             # Firebase authentication state management
-│   └── ProgressContext.jsx         # User progress management (Firestore synced)
+│   ├── AuthContext.jsx             # Firebase auth state
+│   └── ProgressContext.jsx         # Lesson progress synced with Firestore
 ├── data/
-│   ├── lessons/
-│   │   ├── lesson1.js
-│   │   ├── lesson2.js
-│   │   ├── lesson3.js
-│   │   ├── lesson4.js
-│   │   └── lesson5.js
-│   └── curriculum.js               # Lesson content index
-├── firebase.js                     # Firebase configuration and initialization
+│   ├── lessons/                    # lesson1.js through lesson5.js
+│   └── curriculum.js               # Lesson index and metadata
+├── firebase.js                     # Firebase initialisation and config
 ├── hooks/
-│   └── useLessonNavigation.js      # Lesson navigation logic
+│   └── useLessonNavigation.js      # Slide and quiz progression logic
 ├── pages/
-│   ├── lesson/
-│   │   ├── ContextSlide.jsx        # Introduction slides
-│   │   ├── QuizSlide.jsx           # Multiple-choice quizzes
-│   │   ├── RevealSlide.jsx         # Translation reveal cards
-│   │   └── SuccessScreen.jsx       # Completion celebration
-│   ├── CourseMap.jsx               # Journey map view
-│   ├── Home.jsx
-│   ├── LessonPlayer.jsx            # Lesson container
-│   └── NotFound.jsx
+│   ├── CourseMap.jsx               # Lesson map with locked and unlocked states
+│   ├── LessonPlayer.jsx            # Lesson runtime container
+│   └── lesson/
+│       ├── ContextSlide.jsx        # Introduction and context slides
+│       ├── QuizSlide.jsx           # Multiple choice quizzes with feedback
+│       ├── RevealSlide.jsx         # Translation reveal cards
+│       └── SuccessScreen.jsx       # Lesson completion screen
 ├── theme/
-│   └── theme.js                    # MUI theme configuration
-├── utils/
-│   └── storage.js                  # Utility helpers
-├── App.css
-├── App.jsx
-├── index.css
-└── main.jsx
+│   └── theme.js                    # MUI theme with Neo-Brutalism configuration
+└── utils/
+    └── gemini.js                   # Gemini session factory and tool declarations
 ```
 
 ---
 
-## 🛠 Tech Stack
+## Adding new lessons
 
-* React 18
-* React Router DOM
-* Material UI (MUI)
-* Lucide React (icons)
-* React Confetti
-* Vite
-* Firebase Authentication
-* Cloud Firestore
+Create a new file in `src/data/lessons/` following the same structure as the existing ones and register it in `curriculum.js`. The lesson player, course map, and progress tracking all pick it up automatically with no other changes needed.
 
 ---
 
-## 🎨 Customization
-
-* **Add new lessons**: Create a new file in `src/data/lessons/` and update `curriculum.js`
-* **Change colors**: Modify gradient values in `src/theme/theme.js`
-* **Adjust animations**: Update transition durations in component `sx` props
-
----
-
-## 🤝 Contributing
-
-This is a personal learning project. Feel free to fork and modify it for your own use.
-
----
-
-## 📄 License
+## License
 
 MIT
