@@ -202,25 +202,6 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
             boxShadow: { xs: 'none', sm: `6px 6px 0px ${darkMode ? '#000' : '#1A1A1A'}` },
           }}
         >
-          {/* Mobile-only close bar at the very top */}
-          <Box
-            onClick={() => setIsOpen(false)}
-            sx={{
-              display: { xs: 'flex', sm: 'none' },
-              alignItems: 'center',
-              justifyContent: 'center',
-              py: 1,
-              background: '#FF6B6B',
-              borderBottom: '3px solid #1A1A1A',
-              cursor: 'pointer',
-              gap: 1,
-            }}
-          >
-            <X size={16} color="#FFFFFF" />
-            <Typography variant="caption" sx={{ fontWeight: 900, color: '#FFFFFF', fontSize: '0.75rem', letterSpacing: '0.05em' }}>
-              CLOSE CHAT
-            </Typography>
-          </Box>
 
           {/* Header */}
           <Box
@@ -239,16 +220,23 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                 <Bot size={20} />
               </Box>
               <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 900, lineHeight: 1.2, fontSize: '0.9rem' }}>SpanishAmigo</Typography>
-                <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.65rem', fontWeight: 700 }}>AI Language Tutor</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 900, lineHeight: 1.2, fontSize: '0.9rem' }}>Lumi</Typography>
+                <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.65rem', fontWeight: 700 }}>Your language buddy</Typography>
               </Box>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <IconButton onClick={() => setIsMuted(!isMuted)} size="small" sx={{ color: '#1A1A1A', mr: 0.5 }}>
                 {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </IconButton>
-              <IconButton onClick={() => setIsOpen(false)} size="small" sx={{ color: '#1A1A1A' }}>
-                <X size={18} />
+              <IconButton 
+                onClick={() => setIsOpen(false)} 
+                sx={{ 
+                  color: '#1A1A1A',
+                  width: { xs: 36, sm: 28 },
+                  height: { xs: 36, sm: 28 },
+                }}
+              >
+                <X size={20} />
               </IconButton>
             </Box>
           </Box>
@@ -329,7 +317,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
               disabled={isLoading || isListening}
               size="small"
               sx={{
-                color: isListening ? '#FF6B6B' : '#1A1A1A',
+                color: isListening ? '#FF6B6B' : (darkMode ? '#FFFFFF' : '#1A1A1A'),
                 backgroundColor: isListening ? 'rgba(255, 107, 107, 0.15)' : 'transparent',
                 animation: isListening ? 'pulse 1.5s infinite' : 'none',
                 '@keyframes pulse': {

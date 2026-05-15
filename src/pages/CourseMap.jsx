@@ -229,7 +229,7 @@ const CourseMap = () => {
                   variant="subtitle2" 
                   sx={{ 
                     fontWeight: 900,
-                    color: isLocked ? '#9CA3AF' : '#1A1A1A',
+                    color: isLocked ? 'text.disabled' : '#1A1A1A',
                     fontSize: '0.9rem',
                     lineHeight: 1.3,
                   }}
@@ -240,7 +240,7 @@ const CourseMap = () => {
                   <Typography 
                     variant="caption" 
                     sx={{ 
-                      color: isLocked ? '#B0B0B0' : 'rgba(26,26,26,0.7)',
+                      color: isLocked ? 'text.disabled' : 'rgba(26,26,26,0.7)',
                       fontSize: '0.72rem',
                       fontWeight: 700,
                       display: 'block',
@@ -260,7 +260,8 @@ const CourseMap = () => {
                     height: 24,
                     fontSize: '0.8rem',
                     background: '#FFFFFF',
-                    border: '2px solid #1A1A1A',
+                    border: '2px solid',
+                    borderColor: 'divider',
                     fontWeight: 900,
                     minWidth: 0,
                   }}

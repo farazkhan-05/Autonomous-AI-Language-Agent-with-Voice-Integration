@@ -43,7 +43,7 @@ const LessonPlayer = () => {
 
   useEffect(() => {
     setSlideTransition(true);
-    const timer = setTimeout(() => setSlideTransition(false), 400);
+    const timer = setTimeout(() => setSlideTransition(false), 150);
     return () => clearTimeout(timer);
   }, [currentSlide]);
 
@@ -67,7 +67,7 @@ const LessonPlayer = () => {
     <Box 
       sx={{ 
         minHeight: '100vh',
-        background: '#FFFDF2',
+        bgcolor: 'background.default',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -122,7 +122,7 @@ const LessonPlayer = () => {
               right: 8,
               top: '50%',
               transform: 'translateY(-50%)',
-              color: '#1A1A1A',
+              color: (theme) => theme.palette.mode === 'dark' ? '#FFFFFF' : '#1A1A1A',
               fontWeight: 900,
               fontSize: '0.65rem',
             }}
@@ -179,25 +179,26 @@ const LessonPlayer = () => {
         <Box
           sx={{
             width: '100%',
-            background: '#FFFFFF',
+            bgcolor: 'background.paper',
             borderRadius: '16px',
-            border: '3px solid #1A1A1A',
-            boxShadow: '6px 6px 0px #1A1A1A',
+            border: '3px solid',
+            borderColor: 'divider',
+            boxShadow: (theme) => `6px 6px 0px ${theme.palette.divider}`,
             p: { xs: 2.5, sm: 3, md: 3.5 },
             minHeight: { xs: 300, md: 380 },
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
             opacity: slideTransition ? 0.6 : 1,
-            transform: slideTransition ? 'scale(0.97)' : 'scale(1)',
-            transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            transform: slideTransition ? 'scale(0.98)' : 'scale(1)',
+            transition: 'all 0.15s ease',
           }}
         >
           <Box
             sx={{
               opacity: slideTransition ? 0 : 1,
-              transform: slideTransition ? 'translateX(-10px)' : 'translateX(0)',
-              transition: 'all 0.4s ease',
+              transform: slideTransition ? 'translateX(-5px)' : 'translateX(0)',
+              transition: 'all 0.15s ease',
             }}
           >
             {renderSlide()}
