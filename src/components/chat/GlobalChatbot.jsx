@@ -114,20 +114,49 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     setIsLoading(true);
 
     try {
+      // Helper function to process a message, allowing us to retry it if the model fails
+      const attemptSendMessage = async (session, messageContext, isFallbackAttempt = false) => {
+        try {
+          return await session.sendMessage(messageContext);
+        } catch (error) {
+          // If we hit a 429 quota error AND we haven't already tried the backup...
+          if (!isFallbackAttempt && (error.message.includes("429") || error.message.includes("Quota"))) {
+            console.warn("Primary AI model hit quota mid-chat! Falling back to backup model...");
+            
+            // 1. We dynamically import to get the latest helper functions
+            const geminiModule = await import('../../utils/gemini');
+            
+            // 2. Mark the primary as failed in localStorage
+            geminiModule.markPrimaryModelFailed();
+            
+            // 3. Export the current conversation memory
+            const history = await session.getHistory();
+            
+            // 4. Rebuild the AI brain using the backup model, but with the old memory!
+            const userData = { name: user?.displayName || user?.email?.split('@')[0] || "Amigo", completedLessonsCount: completedLessons.length };
+            const newSession = geminiModule.createTutorSessionWithModel("gemma-4-31b", userData, history);
+            
+            // 5. Save the new brain to React state so future messages use it
+            setChatSession(newSession);
+            
+            // 6. Try the exact same message again with the new brain
+            return await newSession.sendMessage(messageContext);
+          }
+          throw error; // If the backup fails, throw it to the UI
+        }
+      };
+
       // Secretly inject the latest progress context so the AI always knows how many lessons are completed
       const systemContext = `[Internal Context Update: The user has now completed ${completedLessons.length} lessons in total.]\n`;
-      let result = await chatSession.sendMessage(systemContext + userMessage);
+      let result = await attemptSendMessage(chatSession, systemContext + userMessage);
       
       // Check if the AI wants to call a function
       const functionCalls = result.response.functionCalls();
       if (functionCalls && functionCalls.length > 0) {
         for (const call of functionCalls) {
           if (call.name === "toggle_theme") {
-            // 1. Actually trigger the UI change in React
             if (onToggleTheme) onToggleTheme();
-            
-            // 2. Tell the AI that the function was successfully executed
-            result = await chatSession.sendMessage([{
+            result = await attemptSendMessage(chatSession, [{
               functionResponse: {
                 name: "toggle_theme",
                 response: { status: "success", action: "theme toggled" }
@@ -141,10 +170,28 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       const responseText = result.response.text();
       if (responseText) {
         setMessages(prev => [...prev, { role: 'model', text: responseText }]);
+        
+        // Log the active model routing for debugging
+        import('../../utils/gemini').then((geminiModule) => {
+          const activeModel = geminiModule.getActiveModelName();
+          if (activeModel.includes("gemini")) {
+            console.log("Status: Success. Source: Primary Model.");
+          } else {
+            console.log("Status: Success. Source: Backup Model (Fallback).");
+          }
+        });
       }
     } catch (error) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: `Error: ${error.message}` }]);
+      
+      let errorMessage = "Sorry, I'm having trouble connecting to the network right now. 🔌";
+      
+      // Handle if BOTH models fail
+      if (error.message.includes("429") || error.message.includes("Quota exceeded")) {
+        errorMessage = "Whoa, Amigo! Both my primary and backup brains are out of energy. Give me a few hours to recharge and we can chat again! 😅🔋";
+      }
+      
+      setMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
     } finally {
       setIsLoading(false);
     }
