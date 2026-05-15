@@ -19,34 +19,17 @@ const LessonPlayer = () => {
 
   const [isCompleted, setIsCompleted] = useState(false);
   const [slideTransition, setSlideTransition] = useState(false);
-  const [confetti, setConfetti] = useState([]);
   const [streak, setStreak] = useState(0);
 
   const lessonId = parseInt(id);
   const lesson = courseData.find((l) => l.id === lessonId);
 
-  // Calculate current streak
   useEffect(() => {
-    const currentStreak = completedLessons.length;
-    setStreak(currentStreak);
+    setStreak(completedLessons.length);
   }, [completedLessons]);
 
-  // Trigger celebration confetti on completion
   const handleLessonFinish = () => {
     markLessonComplete(lessonId);
-    
-    // Generate confetti particles
-    const particles = Array.from({ length: 50 }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: -10,
-      rotation: Math.random() * 360,
-      color: ['#FF6B9D', '#FFD93D', '#6C63FF', '#00D9A3'][Math.floor(Math.random() * 4)],
-      size: Math.random() * 10 + 5,
-      delay: Math.random() * 0.5,
-    }));
-    setConfetti(particles);
-    
     setTimeout(() => {
       setIsCompleted(true);
     }, 300);
@@ -58,16 +41,14 @@ const LessonPlayer = () => {
     nextSlide 
   } = useLessonNavigation(lesson, handleLessonFinish);
 
-  // Trigger slide transition animation
   useEffect(() => {
     setSlideTransition(true);
-    const timer = setTimeout(() => setSlideTransition(false), 500);
+    const timer = setTimeout(() => setSlideTransition(false), 400);
     return () => clearTimeout(timer);
   }, [currentSlide]);
 
   if (!lesson) return <Navigate to="/" />;
 
-  // Success Screen
   if (isCompleted) {
     return <SuccessScreen onBackToMap={() => navigate('/')} />;
   }
@@ -86,114 +67,54 @@ const LessonPlayer = () => {
     <Box 
       sx={{ 
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)',
+        background: '#FFFDF2',
         display: 'flex',
         flexDirection: 'column',
-        position: 'relative',
-        overflow: 'hidden',
       }}
     >
-      {/* Animated Background Mesh */}
-      <Box
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: `
-            radial-gradient(circle at 30% 40%, rgba(255, 107, 157, 0.2) 0%, transparent 50%),
-            radial-gradient(circle at 70% 60%, rgba(108, 99, 255, 0.2) 0%, transparent 50%)
-          `,
-          animation: 'meshFloat 15s ease-in-out infinite',
-          '@keyframes meshFloat': {
-            '0%, 100%': { transform: 'translate(0, 0)' },
-            '50%': { transform: 'translate(20px, -20px)' },
-          },
-        }}
-      />
-
-      {/* Confetti Particles */}
-      {confetti.map((particle) => (
-        <Box
-          key={particle.id}
-          sx={{
-            position: 'fixed',
-            left: `${particle.x}%`,
-            top: `${particle.y}%`,
-            width: particle.size,
-            height: particle.size,
-            background: particle.color,
-            borderRadius: '50%',
-            animation: `confettiFall 3s ease-in forwards`,
-            animationDelay: `${particle.delay}s`,
-            transform: `rotate(${particle.rotation}deg)`,
-            zIndex: 1000,
-            '@keyframes confettiFall': {
-              '0%': {
-                opacity: 1,
-                transform: `translateY(0) rotate(0deg)`,
-              },
-              '100%': {
-                opacity: 0,
-                transform: `translateY(100vh) rotate(720deg)`,
-              },
-            },
-          }}
-        />
-      ))}
-
       {/* Top Navigation Bar */}
       <Box 
         sx={{ 
-          p: 2,
+          p: 1.5,
           display: 'flex',
           alignItems: 'center',
-          gap: 2,
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-          position: 'relative',
-          zIndex: 10,
+          gap: 1.5,
+          background: '#FFE66D',
+          borderBottom: '3px solid #1A1A1A',
+          boxShadow: '0 3px 0px #1A1A1A',
         }}
       >
         {/* Close Button */}
         <IconButton 
           onClick={() => navigate('/')}
           sx={{
-            background: 'rgba(255, 255, 255, 0.2)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            transition: 'all 0.3s ease',
+            background: '#FFFFFF',
+            border: '2px solid #1A1A1A',
+            boxShadow: '2px 2px 0px #1A1A1A',
+            width: 36,
+            height: 36,
+            transition: 'all 0.15s ease',
             '&:hover': {
-              background: 'rgba(255, 107, 157, 0.3)',
-              transform: 'rotate(90deg) scale(1.1)',
+              background: '#FF6B6B',
+              color: '#FFFFFF',
+              transform: 'translate(-1px, -1px)',
+              boxShadow: '3px 3px 0px #1A1A1A',
+            },
+            '&:active': {
+              transform: 'translate(2px, 2px)',
+              boxShadow: '0px 0px 0px #1A1A1A',
             },
           }}
         >
-          <X size={24} color="#FFFFFF" />
+          <X size={18} color="#1A1A1A" />
         </IconButton>
 
-        {/* Progress Bar with Glow */}
+        {/* Progress Bar */}
         <Box sx={{ flexGrow: 1, position: 'relative' }}>
           <LinearProgress 
             variant="determinate" 
             value={progress}
-            sx={{
-              height: 12,
-              borderRadius: '10px',
-              background: 'rgba(255, 255, 255, 0.2)',
-              boxShadow: 'inset 0 2px 4px rgba(0, 0, 0, 0.1)',
-              '& .MuiLinearProgress-bar': {
-                background: 'linear-gradient(90deg, #FF6B9D 0%, #FFD93D 100%)',
-                borderRadius: '10px',
-                boxShadow: `0 0 20px rgba(255, 107, 157, ${progress / 100})`,
-                transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
           />
-          
-          {/* Progress Percentage */}
           <Typography
             variant="caption"
             sx={{
@@ -201,140 +122,82 @@ const LessonPlayer = () => {
               right: 8,
               top: '50%',
               transform: 'translateY(-50%)',
-              color: 'white',
-              fontWeight: 700,
-              fontSize: '0.7rem',
-              textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+              color: '#1A1A1A',
+              fontWeight: 900,
+              fontSize: '0.65rem',
             }}
           >
             {Math.round(progress)}%
           </Typography>
         </Box>
 
-        {/* Lesson Info Badge */}
+        {/* Lesson Title */}
         <Chip
-          icon={<Target size={16} />}
           label={lesson.title}
+          size="small"
           sx={{
-            background: 'rgba(255, 255, 255, 0.2)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            color: 'white',
-            fontWeight: 700,
-            fontSize: { xs: '0.75rem', sm: '0.875rem' },
+            background: '#FFFFFF',
+            border: '2px solid #1A1A1A',
+            boxShadow: '2px 2px 0px #1A1A1A',
+            color: '#1A1A1A',
+            fontWeight: 800,
+            fontSize: '0.72rem',
             display: { xs: 'none', sm: 'flex' },
           }}
         />
 
-        {/* Streak Counter */}
+        {/* Streak */}
         {streak > 0 && (
           <Chip
-            icon={<Zap size={16} />}
             label={`${streak} 🔥`}
+            size="small"
             sx={{
-              background: 'linear-gradient(135deg, #FFD93D 0%, #FF6B9D 100%)',
-              color: 'white',
-              fontWeight: 700,
-              fontSize: '0.875rem',
-              boxShadow: '0 4px 12px rgba(255, 107, 157, 0.4)',
+              background: '#FF6B6B',
+              color: '#FFFFFF',
+              fontWeight: 900,
+              fontSize: '0.75rem',
+              border: '2px solid #1A1A1A',
+              boxShadow: '2px 2px 0px #1A1A1A',
             }}
           />
         )}
       </Box>
 
-      {/* Main Content Container */}
+      {/* Main Content */}
       <Container 
-        maxWidth="md" 
+        maxWidth="sm" 
         sx={{ 
           flexGrow: 1,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          py: { xs: 3, md: 4 },
-          position: 'relative',
-          zIndex: 1,
+          py: { xs: 2, md: 3 },
+          px: { xs: 2, sm: 3 },
         }}
       >
-        {/* Slide Card with Glass Morphism */}
+        {/* Slide Card */}
         <Box
           sx={{
             width: '100%',
-            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(26, 26, 46, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(40px) saturate(200%)',
-            borderRadius: '32px',
-            boxShadow: (theme) => theme.palette.mode === 'dark'
-              ? '0 20px 60px rgba(0, 0, 0, 0.5)'
-              : `
-              0 0 0 1px rgba(255, 255, 255, 0.5),
-              0 20px 60px rgba(108, 99, 255, 0.3),
-              0 40px 100px rgba(255, 107, 157, 0.2)
-            `,
-            border: (theme) => theme.palette.mode === 'dark' ? '1px solid rgba(162, 155, 254, 0.2)' : '1px solid rgba(255, 255, 255, 0.3)',
-            p: { xs: 3, sm: 4, md: 5 },
-            minHeight: { xs: 400, md: 500 },
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            border: '3px solid #1A1A1A',
+            boxShadow: '6px 6px 0px #1A1A1A',
+            p: { xs: 2.5, sm: 3, md: 3.5 },
+            minHeight: { xs: 300, md: 380 },
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
-            position: 'relative',
-            overflow: 'hidden',
-            transform: slideTransition ? 'scale(0.95) rotateY(10deg)' : 'scale(1) rotateY(0deg)',
-            opacity: slideTransition ? 0.7 : 1,
-            transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '6px',
-              background: 'linear-gradient(90deg, #FF6B9D 0%, #FFD93D 33%, #6C63FF 66%, #FF6B9D 100%)',
-              backgroundSize: '200% 100%',
-              animation: 'gradientSlide 3s linear infinite',
-              '@keyframes gradientSlide': {
-                '0%': { backgroundPosition: '0% 0%' },
-                '100%': { backgroundPosition: '200% 0%' },
-              },
-            },
+            opacity: slideTransition ? 0.6 : 1,
+            transform: slideTransition ? 'scale(0.97)' : 'scale(1)',
+            transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
         >
-          {/* Decorative Corner Elements */}
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 20,
-              right: 20,
-              width: 60,
-              height: 60,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, rgba(255, 107, 157, 0.1) 0%, rgba(108, 99, 255, 0.1) 100%)',
-              animation: 'float 4s ease-in-out infinite',
-              '@keyframes float': {
-                '0%, 100%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-10px)' },
-              },
-            }}
-          />
-          
-          <Box
-            sx={{
-              position: 'absolute',
-              bottom: 20,
-              left: 20,
-              width: 80,
-              height: 80,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, rgba(255, 217, 61, 0.1) 0%, rgba(255, 107, 157, 0.1) 100%)',
-              animation: 'float 5s ease-in-out infinite',
-              animationDelay: '1s',
-            }}
-          />
-
-          {/* Slide Content */}
           <Box
             sx={{
               opacity: slideTransition ? 0 : 1,
-              transform: slideTransition ? 'translateX(-20px)' : 'translateX(0)',
-              transition: 'all 0.5s ease',
+              transform: slideTransition ? 'translateX(-10px)' : 'translateX(0)',
+              transition: 'all 0.4s ease',
             }}
           >
             {renderSlide()}
@@ -342,53 +205,51 @@ const LessonPlayer = () => {
         </Box>
       </Container>
 
-      {/* Bottom Encouragement Bar */}
+      {/* Bottom Bar */}
       <Box
         sx={{
-          p: 2,
+          p: 1.5,
           textAlign: 'center',
-          background: 'rgba(0, 0, 0, 0.1)',
-          backdropFilter: 'blur(10px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-          position: 'relative',
-          zIndex: 10,
+          background: '#4ECDC4',
+          borderTop: '3px solid #1A1A1A',
         }}
       >
-        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
           <Chip
-            icon={<Heart size={14} />}
+            icon={<Heart size={12} />}
             label="¡Muy bien!"
             size="small"
             sx={{
-              background: 'rgba(255, 107, 157, 0.2)',
-              backdropFilter: 'blur(10px)',
-              color: 'white',
-              fontWeight: 600,
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: '#FF6B6B',
+              color: '#FFFFFF',
+              fontWeight: 800,
+              border: '2px solid #1A1A1A',
+              fontSize: '0.7rem',
             }}
           />
           <Chip
-            icon={<TrendingUp size={14} />}
+            icon={<TrendingUp size={12} />}
             label="Keep going!"
             size="small"
             sx={{
-              background: 'rgba(108, 99, 255, 0.2)',
-              backdropFilter: 'blur(10px)',
-              color: 'white',
-              fontWeight: 600,
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: '#FFE66D',
+              color: '#1A1A1A',
+              fontWeight: 800,
+              border: '2px solid #1A1A1A',
+              fontSize: '0.7rem',
             }}
           />
           <Chip
-            icon={<Award size={14} />}
+            icon={<Award size={12} />}
             label="You got this!"
             size="small"
             sx={{
-              background: 'rgba(255, 217, 61, 0.2)',
-              backdropFilter: 'blur(10px)',
-              color: 'white',
-              fontWeight: 600,
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: '#A78BFA',
+              color: '#FFFFFF',
+              fontWeight: 800,
+              border: '2px solid #1A1A1A',
+              fontSize: '0.7rem',
+              display: { xs: 'none', sm: 'flex' },
             }}
           />
         </Box>

@@ -151,25 +151,31 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   return (
     <>
       {/* Floating Action Button */}
-      <Box sx={{ position: 'fixed', bottom: { xs: 20, md: 30 }, right: { xs: 20, md: 30 }, zIndex: 1000 }}>
+      <Box sx={{ position: 'fixed', bottom: { xs: 16, md: 24 }, right: { xs: 16, md: 24 }, zIndex: 1000 }}>
         {!isOpen && (
           <IconButton
             onClick={() => setIsOpen(true)}
             sx={{
-              background: 'linear-gradient(135deg, #6C63FF 0%, #A29BFE 100%)',
-              color: 'white',
-              width: { xs: 56, md: 64 },
-              height: { xs: 56, md: 64 },
-              boxShadow: '0 8px 32px rgba(108, 99, 255, 0.4)',
-              transition: 'all 0.3s ease',
+              background: '#4ECDC4',
+              color: '#1A1A1A',
+              width: { xs: 52, md: 56 },
+              height: { xs: 52, md: 56 },
+              border: '3px solid #1A1A1A',
+              boxShadow: '4px 4px 0px #1A1A1A',
+              borderRadius: '14px',
+              transition: 'all 0.15s ease',
               '&:hover': {
-                transform: 'scale(1.1) rotate(5deg)',
-                background: 'linear-gradient(135deg, #5A52E0 0%, #8B83E8 100%)',
-                boxShadow: '0 12px 40px rgba(108, 99, 255, 0.6)',
-              }
+                background: '#5FE0D8',
+                transform: 'translate(-2px, -2px)',
+                boxShadow: '6px 6px 0px #1A1A1A',
+              },
+              '&:active': {
+                transform: 'translate(4px, 4px)',
+                boxShadow: '0px 0px 0px #1A1A1A',
+              },
             }}
           >
-            <Bot size={32} />
+            <Bot size={26} />
           </IconButton>
         )}
       </Box>
@@ -177,57 +183,78 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       {/* Chat Window */}
       <Fade in={isOpen}>
         <Paper
-          elevation={24}
+          elevation={0}
           sx={{
             position: 'fixed',
-            bottom: { xs: 0, sm: 30 },
-            right: { xs: 0, sm: 30 },
-            width: { xs: '100%', sm: 380 },
-            height: { xs: '100%', sm: 600 },
+            top: { xs: '56px', sm: 'auto' },
+            bottom: { xs: 0, sm: 24 },
+            right: { xs: 0, sm: 24 },
+            width: { xs: '100%', sm: 360 },
+            height: { xs: 'calc(100vh - 56px)', sm: 520 },
             maxHeight: '100vh',
             display: isOpen ? 'flex' : 'none',
             flexDirection: 'column',
             zIndex: 1000,
-            borderRadius: { xs: 0, sm: '24px' },
+            borderRadius: { xs: 0, sm: '16px' },
             overflow: 'hidden',
-            background: darkMode ? 'rgba(30, 41, 59, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(20px)',
-            border: darkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(255,255,255,0.4)',
-            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
+            background: darkMode ? '#252542' : '#FFFDF2',
+            border: { xs: 'none', sm: `3px solid ${darkMode ? '#555' : '#1A1A1A'}` },
+            boxShadow: { xs: 'none', sm: `6px 6px 0px ${darkMode ? '#000' : '#1A1A1A'}` },
           }}
         >
+          {/* Mobile-only close bar at the very top */}
+          <Box
+            onClick={() => setIsOpen(false)}
+            sx={{
+              display: { xs: 'flex', sm: 'none' },
+              alignItems: 'center',
+              justifyContent: 'center',
+              py: 1,
+              background: '#FF6B6B',
+              borderBottom: '3px solid #1A1A1A',
+              cursor: 'pointer',
+              gap: 1,
+            }}
+          >
+            <X size={16} color="#FFFFFF" />
+            <Typography variant="caption" sx={{ fontWeight: 900, color: '#FFFFFF', fontSize: '0.75rem', letterSpacing: '0.05em' }}>
+              CLOSE CHAT
+            </Typography>
+          </Box>
+
           {/* Header */}
           <Box
             sx={{
-              background: 'linear-gradient(135deg, #6C63FF 0%, #A29BFE 100%)',
-              p: 2,
+              background: '#4ECDC4',
+              p: 1.5,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              color: 'white'
+              color: '#1A1A1A',
+              borderBottom: `3px solid ${darkMode ? '#555' : '#1A1A1A'}`,
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Box sx={{ background: 'rgba(255,255,255,0.2)', p: 1, borderRadius: '12px' }}>
-                <Bot size={24} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ background: '#FFFFFF', p: 0.7, borderRadius: '8px', border: `2px solid #1A1A1A`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Bot size={20} />
               </Box>
               <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>SpanishAmigo</Typography>
-                <Typography variant="caption" sx={{ opacity: 0.9 }}>AI Language Tutor</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 900, lineHeight: 1.2, fontSize: '0.9rem' }}>SpanishAmigo</Typography>
+                <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.65rem', fontWeight: 700 }}>AI Language Tutor</Typography>
               </Box>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <IconButton onClick={() => setIsMuted(!isMuted)} sx={{ color: 'white', mr: 1 }}>
-                {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+              <IconButton onClick={() => setIsMuted(!isMuted)} size="small" sx={{ color: '#1A1A1A', mr: 0.5 }}>
+                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </IconButton>
-              <IconButton onClick={() => setIsOpen(false)} sx={{ color: 'white' }}>
-                <X size={24} />
+              <IconButton onClick={() => setIsOpen(false)} size="small" sx={{ color: '#1A1A1A' }}>
+                <X size={18} />
               </IconButton>
             </Box>
           </Box>
 
           {/* Messages Area */}
-          <Box sx={{ flex: 1, p: 2, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, backgroundColor: darkMode ? '#0F172A' : '#f8f9fa' }}>
+          <Box sx={{ flex: 1, p: 1.5, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5, backgroundColor: darkMode ? '#1A1A2E' : '#FFFDF2' }}>
             {messages.map((msg, idx) => (
               <Box
                 key={idx}
@@ -238,26 +265,26 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                 }}
               >
                 {msg.role === 'model' && (
-                  <Box sx={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #6C63FF 0%, #A29BFE 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
-                    <Bot size={18} />
+                  <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: '#4ECDC4', border: '2px solid #1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
+                    <Bot size={14} />
                   </Box>
                 )}
                 <Box
                   sx={{
-                    maxWidth: '85%',
-                    p: 2,
-                    borderRadius: '16px',
-                    borderTopRightRadius: msg.role === 'user' ? '4px' : '16px',
-                    borderTopLeftRadius: msg.role === 'model' ? '4px' : '16px',
-                    background: msg.role === 'user' ? 'linear-gradient(135deg, #FF6B9D 0%, #FF8FB5 100%)' : (darkMode ? '#1E293B' : 'white'),
-                    color: msg.role === 'user' ? 'white' : (darkMode ? '#F8FAFC' : '#2D3748'),
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                    maxWidth: '82%',
+                    p: 1.5,
+                    borderRadius: '10px',
+                    background: msg.role === 'user' ? '#FF6B6B' : (darkMode ? '#3A3A5C' : '#FFFFFF'),
+                    color: msg.role === 'user' ? '#FFFFFF' : (darkMode ? '#F8FAFC' : '#1A1A1A'),
+                    border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`,
+                    boxShadow: `2px 2px 0px ${darkMode ? '#000' : '#1A1A1A'}`,
                     typography: 'body2',
-                    lineHeight: 1.6,
-                    '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
-                    '& ul, & ol': { m: 0, pl: 2.5, mb: 1 },
-                    '& li': { mb: 0.5 },
-                    '& strong': { fontWeight: 700, color: msg.role === 'user' ? 'white' : (darkMode ? 'white' : '#1A202C') }
+                    lineHeight: 1.5,
+                    fontSize: '0.8rem',
+                    '& p': { m: 0, mb: 0.5, '&:last-child': { mb: 0 } },
+                    '& ul, & ol': { m: 0, pl: 2, mb: 0.5 },
+                    '& li': { mb: 0.25 },
+                    '& strong': { fontWeight: 800, color: msg.role === 'user' ? 'white' : (darkMode ? '#FFE66D' : '#1A1A1A') }
                   }}
                 >
                   {msg.role === 'model' ? (
@@ -276,19 +303,19 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                   )}
                 </Box>
                 {msg.role === 'user' && (
-                  <Box sx={{ width: 32, height: 32, borderRadius: '50%', background: darkMode ? '#334155' : '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: darkMode ? '#CBD5E1' : '#4A5568', flexShrink: 0 }}>
-                    <User size={18} />
+                  <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: darkMode ? '#3A3A5C' : '#FFE66D', border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
+                    <User size={14} />
                   </Box>
                 )}
               </Box>
             ))}
             {isLoading && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                 <Box sx={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #6C63FF 0%, #A29BFE 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>
-                    <Bot size={18} />
+                 <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: '#4ECDC4', border: '2px solid #1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
+                    <Bot size={14} />
                   </Box>
-                  <Box sx={{ p: 2, borderRadius: '16px', borderTopLeftRadius: '4px', background: darkMode ? '#1E293B' : 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                    <CircularProgress size={16} sx={{ color: '#6C63FF' }} />
+                  <Box sx={{ p: 1.5, borderRadius: '10px', background: darkMode ? '#3A3A5C' : '#FFFFFF', border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`, boxShadow: `2px 2px 0px ${darkMode ? '#000' : '#1A1A1A'}` }}>
+                    <CircularProgress size={14} sx={{ color: '#4ECDC4' }} />
                   </Box>
               </Box>
             )}
@@ -296,22 +323,23 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
           </Box>
 
           {/* Input Area */}
-          <Box component="form" onSubmit={handleSend} sx={{ p: 2, background: darkMode ? '#1E293B' : 'white', borderTop: darkMode ? '1px solid rgba(255,255,255,0.05)' : '1px solid #EDF2F7', display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Box component="form" onSubmit={handleSend} sx={{ p: 1.5, background: darkMode ? '#252542' : '#FFE66D', borderTop: `3px solid ${darkMode ? '#555' : '#1A1A1A'}`, display: 'flex', gap: 1, alignItems: 'center' }}>
             <IconButton
               onClick={handleListen}
               disabled={isLoading || isListening}
+              size="small"
               sx={{
-                color: isListening ? '#FF6B9D' : '#A0AEC0',
-                backgroundColor: isListening ? 'rgba(255, 107, 157, 0.1)' : 'transparent',
+                color: isListening ? '#FF6B6B' : '#1A1A1A',
+                backgroundColor: isListening ? 'rgba(255, 107, 107, 0.15)' : 'transparent',
                 animation: isListening ? 'pulse 1.5s infinite' : 'none',
                 '@keyframes pulse': {
-                  '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 157, 0.7)' },
-                  '70%': { transform: 'scale(1.1)', boxShadow: '0 0 0 10px rgba(255, 107, 157, 0)' },
-                  '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 157, 0)' }
+                  '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 107, 0.7)' },
+                  '70%': { transform: 'scale(1.1)', boxShadow: '0 0 0 8px rgba(255, 107, 107, 0)' },
+                  '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 107, 0)' }
                 }
               }}
             >
-              <Mic size={22} />
+              <Mic size={18} />
             </IconButton>
             <TextField
               fullWidth
@@ -322,12 +350,15 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
               disabled={isLoading}
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: '24px',
-                  backgroundColor: darkMode ? '#0F172A' : '#F7FAFC',
-                  color: darkMode ? '#F8FAFC' : '#1A202C',
+                  borderRadius: '10px',
+                  backgroundColor: darkMode ? '#1A1A2E' : '#FFFFFF',
+                  color: darkMode ? '#F8FAFC' : '#1A1A1A',
+                  fontSize: '0.85rem',
+                  '& fieldset': { border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}` },
                 },
                 '& input': {
-                  color: darkMode ? '#F8FAFC' : '#1A202C',
+                  color: darkMode ? '#F8FAFC' : '#1A1A1A',
+                  py: 1,
                 }
               }}
             />
@@ -335,15 +366,20 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
               type="submit" 
               disabled={!inputText.trim() || isLoading}
               sx={{ 
-                background: 'linear-gradient(135deg, #6C63FF 0%, #A29BFE 100%)', 
-                color: 'white',
-                minWidth: '40px',
-                height: '40px',
-                '&:hover': { background: '#5A52E0' },
-                '&:disabled': { background: '#E2E8F0', color: '#A0AEC0' }
+                background: '#FF6B6B', 
+                color: '#FFFFFF',
+                border: '2px solid #1A1A1A',
+                boxShadow: '2px 2px 0px #1A1A1A',
+                borderRadius: '10px',
+                minWidth: '36px',
+                height: '36px',
+                transition: 'all 0.15s ease',
+                '&:hover': { background: '#FF8787', transform: 'translate(-1px, -1px)', boxShadow: '3px 3px 0px #1A1A1A' },
+                '&:active': { transform: 'translate(2px, 2px)', boxShadow: '0px 0px 0px #1A1A1A' },
+                '&:disabled': { background: '#D1D5DB', color: '#9CA3AF', border: '2px solid #9CA3AF', boxShadow: 'none' }
               }}
             >
-              <Send size={20} />
+              <Send size={16} />
             </IconButton>
           </Box>
         </Paper>
