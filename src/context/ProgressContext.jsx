@@ -20,14 +20,35 @@ export const ProgressProvider = ({ children }) => {
 
           if (docSnap.exists()) {
             // Found existing cloud data! Download it.
-            setCompletedLessons(docSnap.data().completedLessons || []);
+            const cloudProgress = docSnap.data().completedLessons || [];
+            
+            // Merge cloud and local to ensure no progress is lost if cloud save failed previously
+            const saved = localStorage.getItem('spanishProgress');
+            const localProgress = saved ? JSON.parse(saved) : [];
+            const mergedProgress = [...new Set([...cloudProgress, ...localProgress])];
+            
+            setCompletedLessons(mergedProgress);
+            
+            // Sync the merged progress back to cloud if they differ
+            if (mergedProgress.length > cloudProgress.length) {
+              await setDoc(docRef, { completedLessons: mergedProgress }, { merge: true });
+            }
           } else {
-            // New user? They have no cloud file yet.
-            // Upload their current "Guest" progress to start their account.
-            await setDoc(docRef, { completedLessons });
+            // New user? Upload their current local progress to start their account.
+            const saved = localStorage.getItem('spanishProgress');
+            const localProgress = saved ? JSON.parse(saved) : [];
+            await setDoc(docRef, { completedLessons: localProgress });
+            setCompletedLessons(localProgress);
           }
         } catch (error) {
           console.error("Error loading cloud progress:", error);
+          // Fallback to local storage
+          const saved = localStorage.getItem('spanishProgress');
+          if (saved) {
+            setCompletedLessons(JSON.parse(saved));
+          } else {
+            setCompletedLessons([]);
+          }
         }
       } else {
         // --- SCENARIO B: GUEST MODE ---
@@ -53,6 +74,9 @@ export const ProgressProvider = ({ children }) => {
       // Update the App UI immediately (Instant feedback)
       setCompletedLessons(newProgress);
 
+      // Always save to browser memory as a reliable fallback
+      localStorage.setItem('spanishProgress', JSON.stringify(newProgress));
+
       if (user) {
         // --- SAVE TO CLOUD ---
         try {
@@ -62,9 +86,6 @@ export const ProgressProvider = ({ children }) => {
         } catch (error) {
           console.error("Error saving to cloud:", error);
         }
-      } else {
-        // --- SAVE TO BROWSER ---
-        localStorage.setItem('spanishProgress', JSON.stringify(newProgress));
       }
     }
   };

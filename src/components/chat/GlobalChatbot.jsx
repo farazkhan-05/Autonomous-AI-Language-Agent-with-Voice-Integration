@@ -114,7 +114,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     setIsLoading(true);
 
     try {
-      let result = await chatSession.sendMessage(userMessage);
+      // Secretly inject the latest progress context so the AI always knows how many lessons are completed
+      const systemContext = `[Internal Context Update: The user has now completed ${completedLessons.length} lessons in total.]\n`;
+      let result = await chatSession.sendMessage(systemContext + userMessage);
       
       // Check if the AI wants to call a function
       const functionCalls = result.response.functionCalls();
