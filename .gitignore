@@ -25,7 +25,12 @@ dist-ssr
 .env.local
 
 # Python backend
-spanish_amigo_api/.env
-spanish_amigo_api/.venv/
+**/.env
+**/.env.*
+**/.venv/
+**/venv/
 **/__pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

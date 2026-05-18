@@ -1,45 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, IconButton, TextField, Typography, Paper, CircularProgress, Fade } from '@mui/material';
 import { Bot, X, Send, User, Mic, Volume2, VolumeX } from 'lucide-react';
-import { createTutorChat } from '../../utils/gemini';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
 import { useProgress } from '../../context/ProgressContext';
+
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [chatSession, setChatSession] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // Fetch real-time context from Firebase
+  // Fetch real-time context
   const { user } = useAuth();
   const { completedLessons } = useProgress();
 
   // Text-to-Speech (TTS)
   const speakText = (text) => {
-    if (!window.speechSynthesis) return;
+    if (!window.speechSynthesis || isMuted) return;
     
-    // Stop any current speech before starting new one
     window.speechSynthesis.cancel();
-    
-    // Remove markdown symbols to read cleaner
     const cleanText = text.replace(/[*_#`]/g, '');
-    
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = window.speechSynthesis.getVoices();
-    // Try to find a Spanish voice
     const spanishVoice = voices.find(v => v.lang.startsWith('es-') || v.name.includes('Spanish'));
     if (spanishVoice) {
       utterance.voice = spanishVoice;
     } else {
-      utterance.lang = 'es-ES'; // Hint to browser
+      utterance.lang = 'es-ES';
     }
-    
     window.speechSynthesis.speak(utterance);
   };
 
@@ -52,27 +46,23 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'es-ES'; // Listen for Spanish or English
+    recognition.lang = 'es-ES';
     recognition.interimResults = false;
     
     recognition.onstart = () => setIsListening(true);
-    
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       setInputText(prev => prev ? `${prev} ${transcript}` : transcript);
     };
-    
     recognition.onerror = (event) => {
       console.error("Speech error:", event.error);
       setIsListening(false);
     };
-    
     recognition.onend = () => setIsListening(false);
-    
     recognition.start();
   };
 
-  // Auto-scroll to bottom of chat
+  // Auto-scroll
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -81,32 +71,43 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     scrollToBottom();
   }, [messages, isOpen, isLoading]);
 
-  // Initialize chat session only when opened for the first time
+  // Load chat history from Neon Postgres DB when chatbot is opened
   useEffect(() => {
-    if (isOpen && !chatSession) {
-      try {
-        // Collect "RAG" context data
-        const userData = {
-          name: user?.displayName || user?.email?.split('@')[0] || "Amigo",
-          completedLessonsCount: completedLessons.length
-        };
-        
-        const session = createTutorChat(userData);
-        setChatSession(session);
-        // Display initial greeting (matches the pre-seeded history in gemini.js)
-        setMessages([
-          { role: 'model', text: `¡Hola ${userData.name}! 👋 I see you've knocked out ${userData.completedLessonsCount} lessons so far, nice work! I'm here to help you practice or translate whatever you need. Let's chat! What's on your mind? 😎` }
-        ]);
-      } catch (error) {
-        console.error("Failed to initialize chat:", error);
-        setMessages([{ role: 'model', text: "Error connecting to AI. Please check your API key." }]);
-      }
+    if (isOpen && user) {
+      const loadHistory = async () => {
+        setIsLoading(true);
+        try {
+          const response = await fetch(`${API_BASE_URL}/chat/history/${user.uid}`);
+          if (!response.ok) throw new Error("Failed to load chat history");
+          
+          const history = await response.json();
+          if (history.length > 0) {
+            setMessages(history);
+          } else {
+            // Seed default welcoming greeting if history is completely empty
+            const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
+            setMessages([
+              { 
+                role: 'model', 
+                text: `¡Hola ${userName}! 👋 I see you've completed ${completedLessons.length} lessons so far, nice work! I'm here to help you practice or translate whatever you need. Let's chat! What's on your mind? 😎` 
+              }
+            ]);
+          }
+        } catch (error) {
+          console.error("Error loading chat history:", error);
+          setMessages([{ role: 'model', text: "Error connecting to AI. Please verify the Python backend is running." }]);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      loadHistory();
     }
-  }, [isOpen, chatSession]);
+  }, [isOpen, user]);
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!inputText.trim() || isLoading || !chatSession) return;
+    if (!inputText.trim() || isLoading) return;
 
     const userMessage = inputText.trim();
     setInputText('');
@@ -114,84 +115,29 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     setIsLoading(true);
 
     try {
-      // Helper function to process a message, allowing us to retry it if the model fails
-      const attemptSendMessage = async (session, messageContext, isFallbackAttempt = false) => {
-        try {
-          return await session.sendMessage(messageContext);
-        } catch (error) {
-          // If we hit a 429 quota error AND we haven't already tried the backup...
-          if (!isFallbackAttempt && (error.message.includes("429") || error.message.includes("Quota"))) {
-            console.warn("Primary AI model hit quota mid-chat! Falling back to backup model...");
-            
-            // 1. We dynamically import to get the latest helper functions
-            const geminiModule = await import('../../utils/gemini');
-            
-            // 2. Mark the primary as failed in localStorage
-            geminiModule.markPrimaryModelFailed();
-            
-            // 3. Export the current conversation memory
-            const history = await session.getHistory();
-            
-            // 4. Rebuild the AI brain using the backup model, but with the old memory!
-            const userData = { name: user?.displayName || user?.email?.split('@')[0] || "Amigo", completedLessonsCount: completedLessons.length };
-            const newSession = geminiModule.createTutorSessionWithModel("gemma-4-31b", userData, history);
-            
-            // 5. Save the new brain to React state so future messages use it
-            setChatSession(newSession);
-            
-            // 6. Try the exact same message again with the new brain
-            return await newSession.sendMessage(messageContext);
-          }
-          throw error; // If the backup fails, throw it to the UI
-        }
-      };
+      const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
+      const response = await fetch(`${API_BASE_URL}/chat/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.uid,
+          message: userMessage,
+          user_name: userName
+        })
+      });
 
-      // Secretly inject the latest progress context so the AI always knows how many lessons are completed
-      const systemContext = `[Internal Context Update: The user has now completed ${completedLessons.length} lessons in total.]\n`;
-      let result = await attemptSendMessage(chatSession, systemContext + userMessage);
-      
-      // Check if the AI wants to call a function
-      const functionCalls = result.response.functionCalls();
-      if (functionCalls && functionCalls.length > 0) {
-        for (const call of functionCalls) {
-          if (call.name === "toggle_theme") {
-            if (onToggleTheme) onToggleTheme();
-            result = await attemptSendMessage(chatSession, [{
-              functionResponse: {
-                name: "toggle_theme",
-                response: { status: "success", action: "theme toggled" }
-              }
-            }]);
-          }
-        }
-      }
+      if (!response.ok) throw new Error("Backend chat service error");
+      const data = await response.json();
 
-      // Display the AI's final text response
-      const responseText = result.response.text();
-      if (responseText) {
-        setMessages(prev => [...prev, { role: 'model', text: responseText }]);
-        
-        // Log the active model routing for debugging
-        import('../../utils/gemini').then((geminiModule) => {
-          const activeModel = geminiModule.getActiveModelName();
-          if (activeModel.includes("gemini")) {
-            console.log("Status: Success. Source: Primary Model.");
-          } else {
-            console.log("Status: Success. Source: Backup Model (Fallback).");
-          }
-        });
+      if (data.reply) {
+        setMessages(prev => [...prev, { role: 'model', text: data.reply }]);
+        if (!isMuted) {
+          speakText(data.reply);
+        }
       }
     } catch (error) {
-      console.error("Chat error:", error);
-      
-      let errorMessage = "Sorry, I'm having trouble connecting to the network right now. 🔌";
-      
-      // Handle if BOTH models fail
-      if (error.message.includes("429") || error.message.includes("Quota exceeded")) {
-        errorMessage = "Whoa, Amigo! Both my primary and backup brains are out of energy. Give me a few hours to recharge and we can chat again! 😅🔋";
-      }
-      
-      setMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
+      console.error("Chat sending error:", error);
+      setMessages(prev => [...prev, { role: 'model', text: "Lo siento, I am having trouble reaching my server right now. 🔌" }]);
     } finally {
       setIsLoading(false);
     }
@@ -426,3 +372,4 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 };
 
 export default GlobalChatbot;
+

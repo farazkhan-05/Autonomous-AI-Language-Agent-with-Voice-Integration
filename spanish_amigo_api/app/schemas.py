@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 
@@ -12,7 +12,7 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     class Config:
-        from_attributes = True  # Tells Pydantic to read standard SQLAlchemy objects
+        from_attributes = True
 
 
 class ProgressCreate(BaseModel):
@@ -25,3 +25,21 @@ class ProgressResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ChatRequest(BaseModel):
+    user_id: str
+    message: str
+    user_name: Optional[str] = "Amigo"
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+class ExplainRequest(BaseModel):
+    spanish_sentence: str
+    english_translation: str
+
+class ExplainResponse(BaseModel):
+    explanation: str
+

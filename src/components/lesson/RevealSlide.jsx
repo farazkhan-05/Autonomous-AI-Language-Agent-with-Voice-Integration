@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Box, Typography, Button, Fade, Chip, CircularProgress } from '@mui/material';
 import { Eye, Volume2, Lightbulb, ArrowRight, Bot } from 'lucide-react';
-import { explainGrammar } from '../../utils/gemini';
+
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 const RevealSlide = ({ data, onNext }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -11,11 +12,20 @@ const RevealSlide = ({ data, onNext }) => {
   const handleAskAi = async () => {
     try {
       setIsAiLoading(true);
-      const result = await explainGrammar(data.answer, data.question);
-      setAiExplanation(result);
+      const response = await fetch(`${API_BASE_URL}/chat/explain`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spanish_sentence: data.answer,
+          english_translation: data.question
+        })
+      });
+      if (!response.ok) throw new Error("Failed to get grammatical explanation from server.");
+      const result = await response.json();
+      setAiExplanation(result.explanation);
     } catch (error) {
       console.error(error);
-      setAiExplanation(error.message);
+      setAiExplanation("Lo siento, I could not generate an explanation at this moment. Please check your connection.");
     } finally {
       setIsAiLoading(false);
     }

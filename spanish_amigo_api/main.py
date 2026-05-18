@@ -1,50 +1,45 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routers import progress
+from app.routers import progress, chat
 
-# Load our validated environment settings
 settings = get_settings()
 
-# Initialize the FastAPI app
 app = FastAPI(
-    title="SpanishAmigo API", 
-    description="The Python AI backend for SpanishAmigo, powered by LangGraph, Neon Postgres, and Gemini.",
+    title="SpanishAmigo API",
+    description="Python API with LangGraph, Neon Postgres, and Gemini.",
     version="0.1.0"
 )
 
-# Register feature routers
-app.include_router(progress.router)
-
-# Configure CORS (Cross-Origin Resource Sharing)
-# This acts like a whitelist, telling our backend it's safe to receive requests from our React frontend.
+# CORS Whitelist for React dev server
 origins = [
-    "http://localhost:5173",  # The default port where your React Vite app runs
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # Only allow our React app to talk to this backend
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],             # Allow all types of requests (GET, POST, etc.)
-    allow_headers=["*"],             # Allow all custom security headers (like Firebase Auth tokens!)
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# A simple root route to verify the server is running
+# Include Routers
+app.include_router(progress.router)
+app.include_router(chat.router)
+
 @app.get("/")
 async def root():
     return {
         "message": "¡Hola! Welcome to the SpanishAmigo API.",
-        "status": "online",
-        "environment": settings.ENV
+        "status": "online"
     }
 
-# A status/health-check endpoint
 @app.get("/status")
 async def get_status():
     return {
         "status": "healthy",
-        "database": "disconnected (setup pending)",
-        "ai_engine": "gemini-embedding-2 ready"
+        "database": "connected",
+        "ai_engine": "gemini-2.5-flash ready"
     }
