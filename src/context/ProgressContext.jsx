@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext'; // Import the User Brain
-import { db } from '../firebase';        // Import the Cloud Database
-import { doc, getDoc, setDoc } from 'firebase/firestore'; // Import Firebase tools
 
 const ProgressContext = createContext();
+
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 export const ProgressProvider = ({ children }) => {
   const { user } = useAuth(); // Check who is logged in
@@ -12,79 +12,73 @@ export const ProgressProvider = ({ children }) => {
   // 1. SYNC LOGIC (Runs when you login/logout)
   useEffect(() => {
     const loadProgress = async () => {
+      // Fetch local storage fallback
+      const saved = localStorage.getItem('spanishProgress');
+      const localProgress = saved ? JSON.parse(saved) : [];
+
       if (user) {
         // --- SCENARIO A: USER IS LOGGED IN ---
         try {
-          const docRef = doc(db, "users", user.uid); // Look for a file named after their User ID
-          const docSnap = await getDoc(docRef);
+          // Fetch progress from our new FastAPI + Postgres database
+          const response = await fetch(`${API_BASE_URL}/progress/${user.uid}`);
+          if (!response.ok) throw new Error("Backend connection failed");
+          
+          const dbProgress = await response.json(); // Array of lesson IDs e.g. ["1", "2"]
+          
+          // Merge cloud and local so no progress is lost
+          const mergedProgress = [...new Set([...dbProgress, ...localProgress])];
+          setCompletedLessons(mergedProgress);
+          localStorage.setItem('spanishProgress', JSON.stringify(mergedProgress));
 
-          if (docSnap.exists()) {
-            // Found existing cloud data! Download it.
-            const cloudProgress = docSnap.data().completedLessons || [];
-            
-            // Merge cloud and local to ensure no progress is lost if cloud save failed previously
-            const saved = localStorage.getItem('spanishProgress');
-            const localProgress = saved ? JSON.parse(saved) : [];
-            const mergedProgress = [...new Set([...cloudProgress, ...localProgress])];
-            
-            setCompletedLessons(mergedProgress);
-            
-            // Sync the merged progress back to cloud if they differ
-            if (mergedProgress.length > cloudProgress.length) {
-              await setDoc(docRef, { completedLessons: mergedProgress }, { merge: true });
-            }
-          } else {
-            // New user? Upload their current local progress to start their account.
-            const saved = localStorage.getItem('spanishProgress');
-            const localProgress = saved ? JSON.parse(saved) : [];
-            await setDoc(docRef, { completedLessons: localProgress });
-            setCompletedLessons(localProgress);
+          // If there are unsaved local items, upload them to Postgres
+          const unsavedLessons = localProgress.filter(id => !dbProgress.includes(id));
+          if (unsavedLessons.length > 0) {
+            await Promise.all(
+              unsavedLessons.map(lessonId =>
+                fetch(`${API_BASE_URL}/progress/complete`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ user_id: user.uid, lesson_id: lessonId })
+                })
+              )
+            );
           }
         } catch (error) {
-          console.error("Error loading cloud progress:", error);
-          // Fallback to local storage
-          const saved = localStorage.getItem('spanishProgress');
-          if (saved) {
-            setCompletedLessons(JSON.parse(saved));
-          } else {
-            setCompletedLessons([]);
-          }
+          console.warn("⚠️ [SpanishAmigo] Fallback to local storage (Backend offline):", error);
+          setCompletedLessons(localProgress);
         }
       } else {
         // --- SCENARIO B: GUEST MODE ---
-        // Just read from the browser's memory
-        const saved = localStorage.getItem('spanishProgress');
-        if (saved) {
-          setCompletedLessons(JSON.parse(saved));
-        } else {
-          setCompletedLessons([]);
-        }
+        setCompletedLessons(localProgress);
       }
     };
 
     loadProgress();
-  }, [user]); // Only run this when the user changes (Login/Logout)
+  }, [user]); // Run when login status changes
 
   // 2. SAVE LOGIC (Runs when you finish a lesson)
   const markLessonComplete = async (id) => {
     if (!completedLessons.includes(id)) {
-      // Create the new list first
       const newProgress = [...completedLessons, id];
       
-      // Update the App UI immediately (Instant feedback)
+      // Update UI and local storage instantly for snappy feedback
       setCompletedLessons(newProgress);
-
-      // Always save to browser memory as a reliable fallback
       localStorage.setItem('spanishProgress', JSON.stringify(newProgress));
 
       if (user) {
-        // --- SAVE TO CLOUD ---
+        // --- SAVE TO POSTGRES DB ---
         try {
-          const docRef = doc(db, "users", user.uid);
-          // { merge: true } means "update only this field, don't delete other stuff"
-          await setDoc(docRef, { completedLessons: newProgress }, { merge: true });
+          const response = await fetch(`${API_BASE_URL}/progress/complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: user.uid,
+              lesson_id: id
+            })
+          });
+          if (!response.ok) throw new Error("Failed to save progress to server");
         } catch (error) {
-          console.error("Error saving to cloud:", error);
+          console.warn("⚠️ [SpanishAmigo] Progress saved locally, but cloud sync failed:", error);
         }
       }
     }
@@ -97,4 +91,4 @@ export const ProgressProvider = ({ children }) => {
   );
 };
 
-export const useProgress = () => useContext(ProgressContext);
+export const useProgress = () => useContext(ProgressContext);
