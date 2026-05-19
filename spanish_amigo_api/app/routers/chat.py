@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -9,6 +10,8 @@ from app.schemas import ChatRequest, ChatResponse, ExplainRequest, ExplainRespon
 from app.services.ai import tutor_graph, generate_explanation
 from app.services.auth import get_current_user
 from langchain_core.messages import HumanMessage, AIMessage
+
+logger = logging.getLogger("spanish-amigo-ai")
 
 router = APIRouter(
     prefix="/chat",
@@ -44,21 +47,24 @@ def get_chat_history(user_id: str, db: Session = Depends(get_db), current_user: 
 # 2. Send a new message to the AI Spanish tutor
 @router.post("/send", response_model=ChatResponse)
 def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Retrieve verified Firebase UID as primary source of truth
+    verified_user_id = current_user.get("uid")
+
     # Enforce strict tenancy: users can only chat as themselves
-    if current_user.get("uid") != payload.user_id:
+    if verified_user_id != payload.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Cannot send messages on behalf of another user."
         )
 
-    # Fetch completed lesson count for personalization
-    completed_lessons_query = select(CompletedLesson).where(CompletedLesson.user_id == payload.user_id)
+    # Fetch completed lesson count for personalization using verified_user_id
+    completed_lessons_query = select(CompletedLesson).where(CompletedLesson.user_id == verified_user_id)
     completed_count = len(db.scalars(completed_lessons_query).all())
 
-    # Fetch last 10 messages from Postgres database for context
+    # Fetch last 10 messages from Postgres database for context using verified_user_id
     history_query = (
         select(ChatMessage)
-        .where(ChatMessage.user_id == payload.user_id)
+        .where(ChatMessage.user_id == verified_user_id)
         .order_by(ChatMessage.created_at.desc())
         .limit(10)
     )
@@ -79,7 +85,7 @@ def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db), curre
     # Invoke our stateful LangGraph AI Tutor flowchart!
     state_input = {
         "messages": all_messages,
-        "user_id": current_user.get("uid"),
+        "user_id": verified_user_id,
         "user_name": payload.user_name,
         "completed_lessons_count": completed_count
     }
@@ -89,7 +95,11 @@ def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db), curre
         reply_content = output["messages"][-1].content
         return ChatResponse(reply=reply_content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Tutor node error: {str(e)}")
+        logger.error(f"Tutor graph execution failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Tutor service failed. Please try again."
+        )
 
 
 @router.post("/explain", response_model=ExplainResponse)
