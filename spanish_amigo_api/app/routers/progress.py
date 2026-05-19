@@ -7,6 +7,7 @@ from typing import List
 from app.database import get_db
 from app.models import User, CompletedLesson
 from app.schemas import ProgressCreate, ProgressResponse
+from app.services.auth import get_current_user
 
 router = APIRouter(
     prefix="/progress",
@@ -15,7 +16,14 @@ router = APIRouter(
 
 # 1. Fetch completed lessons for a user
 @router.get("/{user_id}", response_model=List[str])
-def get_user_progress(user_id: str, db: Session = Depends(get_db)):
+def get_user_progress(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Enforce strict tenancy: users can only fetch their own progress
+    if current_user.get("uid") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cannot view another user's progress."
+        )
+
     # Find all lessons completed by this user
     query = select(CompletedLesson.lesson_id).where(CompletedLesson.user_id == user_id)
     results = db.scalars(query).all()
@@ -23,7 +31,14 @@ def get_user_progress(user_id: str, db: Session = Depends(get_db)):
 
 # 2. Mark a lesson as complete
 @router.post("/complete", response_model=ProgressResponse)
-def complete_lesson(progress: ProgressCreate, db: Session = Depends(get_db)):
+def complete_lesson(progress: ProgressCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Enforce strict tenancy: users can only record their own progress
+    if current_user.get("uid") != progress.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cannot submit progress on behalf of another user."
+        )
+
     # Check if the user exists in our database, auto-create them if not
     user = db.get(User, progress.user_id)
     if not user:
@@ -53,3 +68,4 @@ def complete_lesson(progress: ProgressCreate, db: Session = Depends(get_db)):
         )
         existing = db.scalars(query).first()
         return existing
+

@@ -11,8 +11,15 @@ class Settings(BaseSettings):
     ENV: str = "development"
     
     # Secrets (FastAPI will validate that these are loaded as strings)
-    DATABASE_URL: str = ""
-    GEMINI_API_KEY: str = ""
+    DATABASE_URL: str
+    GEMINI_API_KEY: str
+    
+    # Model Configuration
+    GEMINI_PRIMARY_MODEL: str = "gemini-3.1-flash-lite"
+    GEMINI_BACKUP_MODEL: str = "gemma-4-31b"
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-2"
+
+
     
     # Instructs Pydantic to read directly from a ".env" file
     model_config = SettingsConfigDict(

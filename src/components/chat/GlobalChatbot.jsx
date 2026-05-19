@@ -77,7 +77,12 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       const loadHistory = async () => {
         setIsLoading(true);
         try {
-          const response = await fetch(`${API_BASE_URL}/chat/history/${user.uid}`);
+          const token = await user.getIdToken();
+          const response = await fetch(`${API_BASE_URL}/chat/history/${user.uid}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
           if (!response.ok) throw new Error("Failed to load chat history");
           
           const history = await response.json();
@@ -108,6 +113,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     }
   }, [isOpen, user]);
 
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!inputText.trim() || isLoading) return;
@@ -119,15 +125,20 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
     try {
       const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
+      const token = await user.getIdToken();
       const response = await fetch(`${API_BASE_URL}/chat/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           user_id: user.uid,
           message: userMessage,
           user_name: userName
         })
       });
+
 
       if (!response.ok) throw new Error("Backend chat service error");
       const data = await response.json();

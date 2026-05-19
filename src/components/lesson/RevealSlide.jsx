@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Typography, Button, Fade, Chip, CircularProgress } from '@mui/material';
 import { Eye, Volume2, Lightbulb, ArrowRight, Bot } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
@@ -8,13 +9,21 @@ const RevealSlide = ({ data, onNext }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState(null);
+  const { user } = useAuth();
 
   const handleAskAi = async () => {
     try {
       setIsAiLoading(true);
+      
+      let headers = { 'Content-Type': 'application/json' };
+      if (user) {
+        const token = await user.getIdToken();
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}/chat/explain`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({
           spanish_sentence: data.answer,
           english_translation: data.question
@@ -30,6 +39,7 @@ const RevealSlide = ({ data, onNext }) => {
       setIsAiLoading(false);
     }
   };
+
 
   return (
     <Box sx={{ textAlign: 'center', py: { xs: 1, md: 2 } }}>

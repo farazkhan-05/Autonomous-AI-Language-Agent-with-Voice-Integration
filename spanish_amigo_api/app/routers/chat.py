@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import List
@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import ChatMessage, CompletedLesson
 from app.schemas import ChatRequest, ChatResponse, ExplainRequest, ExplainResponse
 from app.services.ai import tutor_graph, generate_explanation
+from app.services.auth import get_current_user
 from langchain_core.messages import HumanMessage, AIMessage
 
 router = APIRouter(
@@ -14,9 +15,16 @@ router = APIRouter(
     tags=["Chat"]
 )
 
-# 1. Fetch previous chat history (translating DB schema to React frontend role format)
+# 1. Fetch previous chat history
 @router.get("/history/{user_id}", response_model=List[dict])
-def get_chat_history(user_id: str, db: Session = Depends(get_db)):
+def get_chat_history(user_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Enforce strict tenancy: users can only view their own chat history
+    if current_user.get("uid") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cannot access another user's chat history."
+        )
+
     query = (
         select(ChatMessage)
         .where(ChatMessage.user_id == user_id)
@@ -35,7 +43,14 @@ def get_chat_history(user_id: str, db: Session = Depends(get_db)):
 
 # 2. Send a new message to the AI Spanish tutor
 @router.post("/send", response_model=ChatResponse)
-def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db)):
+def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    # Enforce strict tenancy: users can only chat as themselves
+    if current_user.get("uid") != payload.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cannot send messages on behalf of another user."
+        )
+
     # Fetch completed lesson count for personalization
     completed_lessons_query = select(CompletedLesson).where(CompletedLesson.user_id == payload.user_id)
     completed_count = len(db.scalars(completed_lessons_query).all())
@@ -78,10 +93,11 @@ def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/explain", response_model=ExplainResponse)
-def explain_sentence(payload: ExplainRequest):
+def explain_sentence(payload: ExplainRequest, current_user: dict = Depends(get_current_user)):
     try:
         explanation_content = generate_explanation(payload.spanish_sentence, payload.english_translation)
         return ExplainResponse(explanation=explanation_content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Explanation error: {str(e)}")
+
 

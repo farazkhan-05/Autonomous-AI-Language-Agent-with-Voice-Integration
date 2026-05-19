@@ -4,6 +4,7 @@ import sys
 import time
 from sqlalchemy import text
 from google import genai
+from google.genai import types
 
 # Add parent directory to path so we can import app modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -27,7 +28,7 @@ def seed_database():
         print(f"[RAG Seeder] Notice: pgvector check failed or already exists: {e}")
         db.rollback()
 
-    # 2. Drop and recreate the lesson_slides table to update vector dimensions (from 768 to 3072)
+    # 2. Drop and recreate the lesson_slides table to update vector dimensions to 768
     print("[RAG Seeder] Dropping existing lesson_slides table to refresh schema...")
     try:
         Base.metadata.drop_all(bind=engine, tables=[LessonSlide.__table__])
@@ -35,8 +36,22 @@ def seed_database():
     except Exception as e:
         print(f"[RAG Seeder] Notice: Dropping table failed (probably does not exist yet): {e}")
 
-    print("[RAG Seeder] Recreating database tables...")
-    Base.metadata.create_all(bind=engine, tables=[LessonSlide.__table__])
+    print("[RAG Seeder] Recreating all database tables...")
+    Base.metadata.create_all(bind=engine)
+
+    # 2b. Create the pgvector HNSW cosine index if it does not already exist
+    try:
+        print("[RAG Seeder] Creating HNSW vector cosine index if not exists...")
+        db.execute(text("""
+            CREATE INDEX IF NOT EXISTS lesson_slides_embedding_hnsw_idx
+            ON lesson_slides
+            USING hnsw (embedding vector_cosine_ops);
+        """))
+        db.commit()
+        print("[RAG Seeder] Cosine distance HNSW index successfully validated/created.")
+    except Exception as e:
+        print(f"[RAG Seeder] Notice: HNSW index creation bypassed/failed: {e}")
+        db.rollback()
 
     # 3. Load the JSON compiled lesson slides
     json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lessons_data.json")
@@ -51,41 +66,57 @@ def seed_database():
     print(f"[RAG Seeder] Loaded {len(slides)} slides from JSON file.")
 
     # 4. Initialize the Direct Google GenAI Client
-    print("[RAG Seeder] Initializing direct Google GenAI client (models/gemini-embedding-2)...")
+    print(f"[RAG Seeder] Initializing direct Google GenAI client ({settings.GEMINI_EMBEDDING_MODEL})...")
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     # 5. Seed slides one-by-one with intelligent rate-limit resilience
     print("[RAG Seeder] Generating embeddings and seeding slides...")
     
     total_slides = len(slides)
+    successful_count = 0
+    failed_count = 0
+    skipped_slides = []
 
     for idx, slide_data in enumerate(slides):
-        print(f"[{idx + 1}/{total_slides}] Generating embedding for slide in Lesson {slide_data['lesson_id']}...")
+        print(f"[{idx + 1}/{total_slides}] Generating 768d embedding for slide in Lesson {slide_data['lesson_id']}...")
         
+        text_body = slide_data["content_text"]
+        if slide_data.get("explanation"):
+            text_body += f"\nExplanation: {slide_data['explanation']}"
+        doc_text = f"title: Lesson {slide_data['lesson_id']} Slide {slide_data['slide_index']} | text: {text_body}"
+
         # Get embedding vector with up to 5 retries and rate limit handling
         embedding_val = None
         for attempt in range(5):
             try:
                 response = client.models.embed_content(
-                    model="models/gemini-embedding-2",
-                    contents=slide_data["content_text"]
+                    model=settings.GEMINI_EMBEDDING_MODEL,
+                    contents=doc_text,
+                    config=types.EmbedContentConfig(output_dimensionality=768)
                 )
                 embedding_val = response.embeddings[0].values
                 # 0.75 seconds safety sleep to respect the 100 RPM free-tier limit
                 time.sleep(0.75)
                 break
+
             except Exception as e:
                 err_msg = str(e).lower()
                 if "429" in err_msg or "quota" in err_msg or "resource_exhausted" in err_msg:
-                    print(f"⚠️ [Rate Limit] Free-tier limit hit at slide {idx + 1}. Waiting 30s to recover...")
+                    print(f"[Rate Limit] Free-tier limit hit at slide {idx + 1}. Waiting 30s to recover...")
                     time.sleep(30.0)
                 else:
-                    print(f"🚨 API failed for slide {idx + 1}: {e}. Retrying in 3s...")
+                    print(f"[Error] API failed for slide {idx + 1}: {e}. Retrying in 3s...")
                     time.sleep(3.0)
 
+        # Skip slide on persistent failure (removing zero-vector fallback as requested)
         if embedding_val is None:
-            print(f"❌ Slide embedding completely failed after retries. Using zero-vector fallback.")
-            embedding_val = [0.0] * 3072
+            failed_count += 1
+            slide_id_str = f"Lesson {slide_data['lesson_id']} Slide {slide_data['slide_index']}"
+            skipped_slides.append(slide_id_str)
+            print(f"[Error] Slide embedding failed persistently after retries. Skipping slide: {slide_id_str}")
+            continue
+
+        successful_count += 1
 
         # Create and add LessonSlide record
         slide_record = LessonSlide(
@@ -101,11 +132,24 @@ def seed_database():
         # Commit periodically (every 10 slides) to prevent massive uncommitted states
         if (idx + 1) % 10 == 0:
             db.commit()
-            print(f"💾 Committed progress up to slide {idx + 1}.")
+            print(f"[RAG Seeder] Committed progress up to slide {idx + 1}.")
 
     db.commit()
-    print("[RAG Seeder] Database vector seeder completed successfully!")
+    
+    print("\n==================================================")
+    print("                SEEDING SUMMARY")
+    print("==================================================")
+    print(f"Total slides processed:  {total_slides}")
+    print(f"Successful embeddings:   {successful_count}")
+    print(f"Failed / Skipped:        {failed_count}")
+    if skipped_slides:
+        print("Skipped Slide IDs:")
+        for skip_id in skipped_slides:
+            print(f"  - {skip_id}")
+    print("==================================================\n")
+    
     db.close()
+
 
 if __name__ == "__main__":
     seed_database()

@@ -65,7 +65,17 @@ class LessonSlide(Base):
     slide_type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'context', 'reveal', 'practice'
     content_text: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=True)
-    embedding = mapped_column(Vector(3072), nullable=True) # gemini-embedding-2 output vector has 3072 dimensions
+    embedding = mapped_column(Vector(768), nullable=True) # gemini-embedding-2 output vector optimized to 768 dimensions
+
+
+class SystemStatus(Base):
+    __tablename__ = "system_status"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 
 
 

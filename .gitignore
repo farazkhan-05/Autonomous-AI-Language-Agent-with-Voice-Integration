@@ -37,7 +37,9 @@ dist-ssr
 
 # Local Architecture Checklist Copy
 BACKEND_ARCHITECTURE_CHECKLIST.md
+BACKEND_ARCHITECTURE.md
 parse_lessons.js
 lessons_data.json
+
 
 

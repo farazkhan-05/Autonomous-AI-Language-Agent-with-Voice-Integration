@@ -19,8 +19,15 @@ export const ProgressProvider = ({ children }) => {
       if (user) {
         // --- SCENARIO A: USER IS LOGGED IN ---
         try {
-          // Fetch progress from our new FastAPI + Postgres database
-          const response = await fetch(`${API_BASE_URL}/progress/${user.uid}`);
+          // Fetch token from Firebase auth context
+          const token = await user.getIdToken();
+          
+          // Fetch progress from our new FastAPI + Postgres database with token
+          const response = await fetch(`${API_BASE_URL}/progress/${user.uid}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
           if (!response.ok) throw new Error("Backend connection failed");
           
           const dbProgress = await response.json(); // Array of lesson IDs e.g. ["1", "2"]
@@ -34,13 +41,17 @@ export const ProgressProvider = ({ children }) => {
           const unsavedLessons = localProgress.filter(id => !dbProgress.includes(id));
           if (unsavedLessons.length > 0) {
             await Promise.all(
-              unsavedLessons.map(lessonId =>
-                fetch(`${API_BASE_URL}/progress/complete`, {
+              unsavedLessons.map(async (lessonId) => {
+                const uploadToken = await user.getIdToken();
+                return fetch(`${API_BASE_URL}/progress/complete`, {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${uploadToken}`
+                  },
                   body: JSON.stringify({ user_id: user.uid, lesson_id: lessonId })
-                })
-              )
+                });
+              })
             );
           }
         } catch (error) {
@@ -68,9 +79,13 @@ export const ProgressProvider = ({ children }) => {
       if (user) {
         // --- SAVE TO POSTGRES DB ---
         try {
+          const token = await user.getIdToken();
           const response = await fetch(`${API_BASE_URL}/progress/complete`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({
               user_id: user.uid,
               lesson_id: id
@@ -83,6 +98,7 @@ export const ProgressProvider = ({ children }) => {
       }
     }
   };
+
 
   return (
     <ProgressContext.Provider value={{ completedLessons, markLessonComplete }}>
