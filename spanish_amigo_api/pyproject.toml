@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "langchain-google-genai>=4.2.2",
     "langgraph>=1.2.0",
+    "pgvector>=0.4.2",
     "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.1",
     "sqlalchemy>=2.0.49",

@@ -1,7 +1,9 @@
 from datetime import datetime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 from app.database import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -52,3 +54,18 @@ class ChatMessage(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="chat_messages")
+
+
+class LessonSlide(Base):
+    __tablename__ = "lesson_slides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lesson_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    slide_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    slide_type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'context', 'reveal', 'practice'
+    content_text: Mapped[str] = mapped_column(Text, nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=True)
+    embedding = mapped_column(Vector(3072), nullable=True) # gemini-embedding-2 output vector has 3072 dimensions
+
+
+

@@ -34,3 +34,10 @@ dist-ssr
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Local Architecture Checklist Copy
+BACKEND_ARCHITECTURE_CHECKLIST.md
+parse_lessons.js
+lessons_data.json
+
+

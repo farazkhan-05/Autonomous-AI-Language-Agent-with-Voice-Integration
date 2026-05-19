@@ -95,7 +95,10 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
           }
         } catch (error) {
           console.error("Error loading chat history:", error);
-          setMessages([{ role: 'model', text: "Error connecting to AI. Please verify the Python backend is running." }]);
+          setMessages([{ 
+            role: 'model', 
+            text: "¡Lo siento! I'm having a little trouble connecting with my Spanish brain right now. Give me a moment to wake up! 🔌" 
+          }]);
         } finally {
           setIsLoading(false);
         }
