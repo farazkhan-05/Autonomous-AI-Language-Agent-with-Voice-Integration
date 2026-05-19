@@ -1,45 +1,55 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import Optional, List
 
 class UserCreate(BaseModel):
-    id: str  # Firebase UID
-    email: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str = Field(..., min_length=1, max_length=128)  # Firebase UID
+    email: Optional[str] = Field(None, max_length=255)
 
 class UserResponse(BaseModel):
-    id: str
-    email: Optional[str]
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str = Field(..., min_length=1, max_length=128)
+    email: Optional[str] = Field(None, max_length=255)
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class ProgressCreate(BaseModel):
-    user_id: str
-    lesson_id: str
+    model_config = ConfigDict(from_attributes=True)
+    
+    user_id: str = Field(..., min_length=1, max_length=128)
+    lesson_id: str = Field(..., min_length=1, max_length=128)
 
 class ProgressResponse(BaseModel):
-    lesson_id: str
+    model_config = ConfigDict(from_attributes=True)
+    
+    lesson_id: str = Field(..., min_length=1, max_length=128)
     completed_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class ChatRequest(BaseModel):
-    user_id: str
-    message: str
-    user_name: Optional[str] = "Amigo"
+    model_config = ConfigDict(from_attributes=True)
+    
+    user_id: str = Field(..., min_length=1, max_length=128)
+    message: str = Field(..., min_length=1, max_length=2000)
+    user_name: Optional[str] = Field("Amigo", max_length=100)
 
 class ChatResponse(BaseModel):
-    reply: str
+    model_config = ConfigDict(from_attributes=True)
+    
+    reply: str = Field(..., min_length=1)
+    action_required: Optional[str] = None
 
 
 class ExplainRequest(BaseModel):
-    spanish_sentence: str
-    english_translation: str
+    model_config = ConfigDict(from_attributes=True)
+    
+    spanish_sentence: str = Field(..., min_length=1, max_length=1000)
+    english_translation: str = Field(..., min_length=1, max_length=1000)
 
 class ExplainResponse(BaseModel):
-    explanation: str
-
+    model_config = ConfigDict(from_attributes=True)
+    
+    explanation: str = Field(..., min_length=1)

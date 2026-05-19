@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from sqlalchemy.orm import Session
@@ -18,6 +19,12 @@ from app.models import ChatMessage, User, LessonSlide, SystemStatus
 from app.database import SessionLocal
 
 settings = get_settings()
+
+@tool
+def toggle_theme() -> str:
+    """Toggles the application theme between dark mode and light mode. Call this when the user mentions their eyes hurting, wanting a darker/lighter screen, or explicitly asking for dark/light mode."""
+    return "Theme toggled successfully."
+
 
 # Configure structured logger for standard production log aggregation
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -93,23 +100,26 @@ class ModelManager:
 model_manager = ModelManager()
 
 
-def get_model(model_name: str) -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
+def get_model(model_name: str, bind_toggle_theme: bool = False) -> ChatGoogleGenerativeAI:
+    model = ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=settings.GEMINI_API_KEY,
     )
+    if bind_toggle_theme:
+        return model.bind_tools([toggle_theme])
+    return model
 
 
-def invoke_with_fallback(messages: list) -> AIMessage:
+def invoke_with_fallback(messages: list, bind_toggle_theme: bool = False) -> AIMessage:
     """Invoke the active model. Switch to backup model on 429 quota exhaustion."""
     active = model_manager.get_active_model_name()
     try:
-        return get_model(active).invoke(messages)
+        return get_model(active, bind_toggle_theme=bind_toggle_theme).invoke(messages)
     except Exception as e:
         if model_manager.is_quota_error(e) and active == model_manager.primary_model:
             model_manager.trigger_fallback()
             try:
-                return get_model(model_manager.backup_model).invoke(messages)
+                return get_model(model_manager.backup_model, bind_toggle_theme=bind_toggle_theme).invoke(messages)
             except Exception as backup_err:
                 logger.error(f"Backup model '{model_manager.backup_model}' also failed: {backup_err}")
                 raise backup_err
@@ -357,7 +367,7 @@ def tutor_node(state: TutorState) -> dict:
 
     system_instruction = SystemMessage(content=tutor_prompt)
     messages = [system_instruction] + state["messages"]
-    response = invoke_with_fallback(messages)
+    response = invoke_with_fallback(messages, bind_toggle_theme=True)
     return {"messages": [response]}
 
 

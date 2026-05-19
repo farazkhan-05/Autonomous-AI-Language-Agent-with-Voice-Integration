@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
@@ -15,6 +16,7 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    os.getenv("FRONTEND_URL", "https://your-vercel-app.vercel.app"),
 ]
 
 app.add_middleware(

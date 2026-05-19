@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
 import { useProgress } from '../../context/ProgressContext';
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -142,6 +142,10 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
       if (!response.ok) throw new Error("Backend chat service error");
       const data = await response.json();
+
+      if (data.action_required === "TOGGLE_THEME" && typeof onToggleTheme === "function") {
+        onToggleTheme();
+      }
 
       if (data.reply) {
         setMessages(prev => [...prev, { role: 'model', text: data.reply }]);

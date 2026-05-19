@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext'; // Import the User Brain
 
 const ProgressContext = createContext();
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 export const ProgressProvider = ({ children }) => {
   const { user } = useAuth(); // Check who is logged in

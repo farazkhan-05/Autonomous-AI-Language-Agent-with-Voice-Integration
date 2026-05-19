@@ -3,7 +3,7 @@ import { Box, Typography, Button, Fade, Chip, CircularProgress } from '@mui/mate
 import { Eye, Volume2, Lightbulb, ArrowRight, Bot } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const RevealSlide = ({ data, onNext }) => {
   const [isRevealed, setIsRevealed] = useState(false);

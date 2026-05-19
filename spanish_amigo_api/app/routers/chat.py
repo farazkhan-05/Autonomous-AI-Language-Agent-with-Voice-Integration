@@ -92,8 +92,18 @@ def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db), curre
 
     try:
         output = tutor_graph.invoke(state_input)
-        reply_content = output["messages"][-1].content
-        return ChatResponse(reply=reply_content)
+        last_msg = output["messages"][-1]
+        reply_content = last_msg.content
+        action_required = None
+
+        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+            for tc in last_msg.tool_calls:
+                if tc.get("name") == "toggle_theme":
+                    action_required = "TOGGLE_THEME"
+                    reply_content = "¡Claro! Switched the theme. 😎"
+                    break
+
+        return ChatResponse(reply=reply_content, action_required=action_required)
     except Exception as e:
         logger.error(f"Tutor graph execution failed: {str(e)}", exc_info=True)
         raise HTTPException(
