@@ -4,6 +4,10 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+# Set dummy required environment secrets for tests/CI before importing app code
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://test:test@localhost:5432/test")
+os.environ.setdefault("GEMINI_API_KEY", "test-key")
+
 # Add parent directory to path so we can import app modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,7 +20,6 @@ from app.services.ai import (
     tutor_node
 )
 from langchain_core.messages import HumanMessage, AIMessage
-from app.models import SystemStatus
 
 
 class TestSpanishAmigoSecurityAndRAG(unittest.TestCase):
@@ -31,6 +34,16 @@ class TestSpanishAmigoSecurityAndRAG(unittest.TestCase):
             "guardrail_reason": None,
             "guardrail_category": None
         }
+        # Class-level SessionLocal patcher to prevent any database connection attempts globally across tests
+        self.db_patcher = patch("app.services.ai.SessionLocal")
+        self.mock_session_local = self.db_patcher.start()
+        self.mock_db = MagicMock()
+        self.mock_session_local.return_value = self.mock_db
+        # By default, mock db.get to return None (no fallback registered)
+        self.mock_db.get.return_value = None
+
+    def tearDown(self):
+        self.db_patcher.stop()
 
     def test_greetings_bypass_llm_precheck_single_word(self):
         """Standard single-word conversational greetings should bypass the LLM and pass immediately."""
@@ -85,26 +98,25 @@ class TestSpanishAmigoSecurityAndRAG(unittest.TestCase):
         route = route_after_guardrails(self.state)
         self.assertEqual(route, "save_memory")
 
-    @patch("app.services.ai.SessionLocal")
-    def test_database_backed_model_fallback(self, mock_session_local):
+    def test_database_backed_model_fallback(self):
         """Model fallback should write state to the database to sync across instances (mocked DB)."""
-        mock_db = MagicMock()
-        mock_session_local.return_value = mock_db
+        # Reset mock calls
+        self.mock_db.reset_mock()
 
         # Initially, no fallback row exists
-        mock_db.get.return_value = None
+        self.mock_db.get.return_value = None
 
         # Initially active model should be primary
         self.assertEqual(model_manager.get_active_model_name(), model_manager.primary_model)
 
         # Trigger fallback
         model_manager.trigger_fallback()
-        self.assertTrue(mock_db.add.called or mock_db.commit.called)
+        self.assertTrue(self.mock_db.add.called or self.mock_db.commit.called)
 
         # Mock db.get returning active fallback row
         mock_row = MagicMock()
         mock_row.value = str(time.time() + 1800.0)  # active for 30 mins
-        mock_db.get.return_value = mock_row
+        self.mock_db.get.return_value = mock_row
 
         # Now active model should be backup
         self.assertEqual(model_manager.get_active_model_name(), model_manager.backup_model)
@@ -134,7 +146,7 @@ class TestSpanishAmigoSecurityAndRAG(unittest.TestCase):
         mock_structured = MagicMock()
         mock_classification = MagicMock()
         mock_classification.is_safe = False
-        mock_classification.category = "medical_advice"
+        mock_classification.category = "off_topic"
         mock_classification.reason = "User is asking for actual medical treatment advice."
         
         mock_structured.invoke.return_value = mock_classification
@@ -142,12 +154,11 @@ class TestSpanishAmigoSecurityAndRAG(unittest.TestCase):
 
         result = guardrails_node(self.state)
         self.assertTrue(result.get("guardrail_blocked"))
-        self.assertEqual(result.get("guardrail_category"), "medical_advice")
+        self.assertEqual(result.get("guardrail_category"), "off_topic")
 
     @patch("app.services.ai.genai.Client")
-    @patch("app.services.ai.SessionLocal")
     @patch("app.services.ai.invoke_with_fallback")
-    def test_rag_formatting_query(self, mock_invoke, mock_session_local, mock_client_class):
+    def test_rag_formatting_query(self, mock_invoke, mock_client_class):
         """Verify the query sent to Gemini Embedding 2 includes 'task: search result | query:' format."""
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
@@ -158,10 +169,8 @@ class TestSpanishAmigoSecurityAndRAG(unittest.TestCase):
         mock_emb_res.embeddings = [mock_emb_val]
         mock_client.models.embed_content.return_value = mock_emb_res
 
-        mock_db = MagicMock()
-        mock_session_local.return_value = mock_db
-        # Return empty list for slide retrieval
-        mock_db.execute.return_value.all.return_value = []
+        # Return empty list for slide retrieval in mock db execute
+        self.mock_db.execute.return_value.all.return_value = []
 
         mock_invoke.return_value = AIMessage(content="Test response")
 

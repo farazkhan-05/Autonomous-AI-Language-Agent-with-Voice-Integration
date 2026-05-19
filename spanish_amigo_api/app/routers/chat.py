@@ -79,7 +79,7 @@ def send_chat_message(payload: ChatRequest, db: Session = Depends(get_db), curre
     # Invoke our stateful LangGraph AI Tutor flowchart!
     state_input = {
         "messages": all_messages,
-        "user_id": payload.user_id,
+        "user_id": current_user.get("uid"),
         "user_name": payload.user_name,
         "completed_lessons_count": completed_count
     }
