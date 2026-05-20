@@ -117,11 +117,15 @@ def send_chat_message(
 
     # Check if the user exists in our database, auto-create them if not
     user = db.get(User, verified_user_id)
+    current_email = current_user.get("email")
     if not user:
-        user = User(id=verified_user_id, email=current_user.get("email"))
+        user = User(id=verified_user_id, email=current_email)
         db.add(user)
         db.commit()
         db.refresh(user)
+    elif not user.email and current_email:
+        user.email = current_email
+        db.commit()
 
     # Retrieve or create session
     active_session_id = payload.session_id
@@ -132,7 +136,7 @@ def send_chat_message(
         if len(words) > 4:
             temp_title += "..."
         if not temp_title:
-            temp_title = "Nueva conversación"
+            temp_title = "New conversation"
 
         session = ChatSession(user_id=verified_user_id, title=temp_title)
         db.add(session)
@@ -184,6 +188,7 @@ def send_chat_message(
         "messages": all_messages,
         "user_id": verified_user_id,
         "user_name": payload.user_name,
+        "user_email": current_email,
         "completed_lessons_count": completed_count,
         "session_id": active_session_id
     }
@@ -233,11 +238,15 @@ def send_chat_message_stream(
 
     # Check if the user exists in our database, auto-create them if not
     user = db.get(User, verified_user_id)
+    current_email = current_user.get("email")
     if not user:
-        user = User(id=verified_user_id, email=current_user.get("email"))
+        user = User(id=verified_user_id, email=current_email)
         db.add(user)
         db.commit()
         db.refresh(user)
+    elif not user.email and current_email:
+        user.email = current_email
+        db.commit()
 
     # Retrieve or create session
     active_session_id = payload.session_id
@@ -248,7 +257,7 @@ def send_chat_message_stream(
         if len(words) > 4:
             temp_title += "..."
         if not temp_title:
-            temp_title = "Nueva conversación"
+            temp_title = "New conversation"
 
         session = ChatSession(user_id=verified_user_id, title=temp_title)
         db.add(session)
@@ -300,6 +309,7 @@ def send_chat_message_stream(
         "messages": all_messages,
         "user_id": verified_user_id,
         "user_name": payload.user_name,
+        "user_email": current_email,
         "completed_lessons_count": completed_count,
         "session_id": active_session_id
     }
@@ -430,4 +440,3 @@ def explain_sentence(payload: ExplainRequest):
     except Exception as e:
         logger.error(f"[Explain] AI explanation error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"AI Explanation error: {str(e)}")
-

@@ -62,6 +62,7 @@ class TutorState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     user_id: str
     user_name: str
+    user_email: Optional[str]
     completed_lessons_count: int
     guardrail_blocked: bool
     guardrail_reason: Optional[str]
@@ -468,11 +469,16 @@ def save_memory_node(state: TutorState) -> dict:
     db: Session = SessionLocal()
     try:
         user_id = state["user_id"]
+        user_email = state.get("user_email")
         session_id = state.get("session_id")
 
-        # Lazy-create the user row if it doesn't exist yet
-        if not db.get(User, user_id):
-            db.add(User(id=user_id))
+        # Lazy-create the user row if it doesn't exist yet, and keep email synced if available.
+        existing_user = db.get(User, user_id)
+        if not existing_user:
+            db.add(User(id=user_id, email=user_email))
+            db.commit()
+        elif not existing_user.email and user_email:
+            existing_user.email = user_email
             db.commit()
 
         user_msg = None
@@ -507,13 +513,13 @@ def save_memory_node(state: TutorState) -> dict:
 # ============================================================================
 
 def generate_chat_title(first_message: str) -> str:
-    """Generates a brief 3-4 word title in Spanish summarizing the user's first message."""
+    """Generates a brief 3-4 word title in English summarizing the user's first message."""
     try:
         prompt = [
             SystemMessage(content=(
                 "You are a helpful assistant. Generate a very brief, friendly title (maximum 3-4 words) "
-                "in Spanish summarizing the user's message. Do NOT use quotes, punctuation, or Markdown. "
-                "Keep it simple, active, and pleasant. Example input: 'How do I say thank you?' -> Example output: 'Agradecimientos en español'"
+                "in English summarizing the user's message. Do NOT use quotes, punctuation, or Markdown. "
+                "Keep it simple, active, and pleasant. Example input: 'How do I say thank you?' -> Example output: 'Spanish thank you phrase'"
             )),
             HumanMessage(content=first_message)
         ]
@@ -531,7 +537,7 @@ def generate_chat_title(first_message: str) -> str:
         fallback_title = " ".join(words[:4])
         if len(words) > 4:
             fallback_title += "..."
-        return fallback_title if fallback_title else "Nueva conversación"
+        return fallback_title if fallback_title else "New conversation"
 
 
 # ============================================================================

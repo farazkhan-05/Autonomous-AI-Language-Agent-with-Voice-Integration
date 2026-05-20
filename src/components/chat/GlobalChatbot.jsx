@@ -34,7 +34,13 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     if (!window.speechSynthesis || isMuted) return;
     
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*_#`]/g, '');
+    // Remove markdown + emojis/symbol pictographs so TTS reads only meaningful words.
+    const cleanText = text
+      .replace(/[*_#`]/g, '')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleanText) return;
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = window.speechSynthesis.getVoices();
     const spanishVoice = voices.find(v => v.lang.startsWith('es-') || v.name.includes('Spanish'));
@@ -45,6 +51,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     }
     window.speechSynthesis.speak(utterance);
   };
+
+  // Hide the flag from the UI without changing the model's actual response.
+  const sanitizeDisplayText = (text) => text.replace(/🇪🇸/g, '').replace(/\s+/g, ' ').trim();
 
   // Speech-to-Text (STT)
   const handleListen = () => {
@@ -312,11 +321,8 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
           }
         }
       }
-
-      // If speech is enabled and voice exists, speak the full message
-      if (accumulatedReply && !isMuted) {
-        speakText(accumulatedReply);
-      }
+      // Intentionally do not auto-speak on reply.
+      // Speech should only play when user taps the sound icon on a message.
     } catch (error) {
       console.error("Chat sending error:", error);
       setMessages(prev => [...prev, { role: 'model', text: "Lo siento, I am having trouble reaching my server right now. 🔌" }]);
@@ -484,7 +490,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                     e.currentTarget.style.boxShadow = '3px 3px 0px #1A1A1A';
                   }}
                 >
-                  <Plus size={16} /> Nueva conversación
+                  <Plus size={16} /> New conversation
                 </button>
               </Box>
 
@@ -492,7 +498,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                 {sessions.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography variant="caption" sx={{ color: darkMode ? '#888' : '#666', fontWeight: 700 }}>
-                      No hay conversaciones aún.
+                      No conversations yet.
                     </Typography>
                   </Box>
                 ) : (
@@ -606,7 +612,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                 <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1.5 }}>
                   <CircularProgress size={28} sx={{ color: '#4ECDC4' }} />
                   <Typography variant="caption" sx={{ fontWeight: 800, color: darkMode ? '#888' : '#666' }}>
-                    Cargando conversación...
+                    Loading conversation...
                   </Typography>
                 </Box>
               ) : (
@@ -645,9 +651,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                       >
                         {msg.role === 'model' ? (
                           <Box sx={{ position: 'relative', pr: 3 }}>
-                            <ReactMarkdown>{msg.text}</ReactMarkdown>
+                            <ReactMarkdown>{sanitizeDisplayText(msg.text)}</ReactMarkdown>
                             <IconButton 
-                              onClick={() => speakText(msg.text)} 
+                              onClick={() => speakText(sanitizeDisplayText(msg.text))} 
                               size="small" 
                               sx={{ position: 'absolute', top: -8, right: -16, color: '#A0AEC0', '&:hover': { color: '#6C63FF' } }}
                             >
@@ -748,4 +754,5 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 };
 
 export default GlobalChatbot;
+
 

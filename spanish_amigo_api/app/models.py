@@ -52,7 +52,7 @@ class ChatSession(Base):
     user_id: Mapped[str] = mapped_column(
         String(128), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    title: Mapped[str] = mapped_column(String(255), default="Nueva conversación")
+    title: Mapped[str] = mapped_column(String(255), default="New conversation")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -100,7 +100,6 @@ class SystemStatus(Base):
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[str] = mapped_column(String(255), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 
 
 
