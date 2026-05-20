@@ -20,6 +20,8 @@ from app.database import SessionLocal
 
 settings = get_settings()
 
+_embedding_blocked_until = 0.0
+
 @tool
 def toggle_theme() -> str:
     """Toggles the application theme between dark mode and light mode. Call this when the user mentions their eyes hurting, wanting a darker/lighter screen, or explicitly asking for dark/light mode."""
@@ -29,6 +31,27 @@ def toggle_theme() -> str:
 # Configure structured logger for standard production log aggregation
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("spanish-amigo-ai")
+
+
+def extract_text_content(content) -> str:
+    """Extract string content from LangChain message content which can be a string, list, or dict."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text_parts = []
+        for part in content:
+            if isinstance(part, str):
+                text_parts.append(part)
+            elif isinstance(part, dict):
+                if "text" in part:
+                    text_parts.append(part["text"])
+                elif part.get("type") == "text" and "text" in part:
+                    text_parts.append(part["text"])
+        return "".join(text_parts)
+    if isinstance(content, dict):
+        if "text" in content:
+            return content["text"]
+    return str(content)
 
 
 # ============================================================================
@@ -43,6 +66,7 @@ class TutorState(TypedDict):
     guardrail_blocked: bool
     guardrail_reason: Optional[str]
     guardrail_category: Optional[str]
+    session_id: Optional[int]
 
 
 # ============================================================================
@@ -188,7 +212,7 @@ User input: "{user_input}"
 
 
 def guardrails_node(state: TutorState) -> dict:
-    last_msg_raw = state["messages"][-1].content
+    last_msg_raw = extract_text_content(state["messages"][-1].content)
     
     # Clean string: strip, lowercase, remove punctuation, normalize whitespace
     last_msg_lower = last_msg_raw.strip().lower()
@@ -216,48 +240,54 @@ def guardrails_node(state: TutorState) -> dict:
             "guardrail_category": "spanish_learning"
         }
 
-
-
-    # 2. Advanced intent validation with LLM
-    try:
-        active_model_name = model_manager.get_active_model_name()
-        structured_model = get_model(active_model_name).with_structured_output(GuardrailClassification)
-        
-        prompt = _GUARDRAIL_CLASSIFIER_PROMPT.format(user_input=last_msg_raw)
-        classification = structured_model.invoke([SystemMessage(content=prompt)])
-        
-        if not classification.is_safe:
-            logger.warning(
-                f"🚨 [Guardrails] BLOCKED user input. Category: '{classification.category}'. Reason: {classification.reason}"
-            )
-            return {
-                "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
-                "guardrail_blocked": True,
-                "guardrail_reason": classification.reason,
-                "guardrail_category": classification.category
-            }
-        
-        logger.info(f"✅ [Guardrails] Passed intent classification. Category: '{classification.category}'")
+    # C. Theme toggling / UI controls pre-check Bypass
+    _THEME_KEYWORDS = [
+        "dark mode", "light mode", "dark theme", "light theme", "toggle theme",
+        "change theme", "switch theme", "turn the light", "turn the lights",
+        "turn light", "turn lights", "turn off light", "turn on light",
+        "eyes hurt", "eyes are hurting", "too bright", "too dark", "screen is bright"
+    ]
+    if any(kw in last_msg_lower for kw in _THEME_KEYWORDS):
+        logger.info("⚡ [Guardrails] Passed fast local pre-check (theme toggle control).")
         return {
             "guardrail_blocked": False,
-            "guardrail_reason": classification.reason,
-            "guardrail_category": classification.category
-        }
-    except Exception as e:
-        logger.error(f"⚠️ [Guardrails] Classification query failed: {e}. Defaulting to keyword safety fallback.")
-        # Minimal keyword fallback if LLM is completely down/unreachable
-        if any(kw in last_msg_lower for kw in _OFF_TOPIC_KEYWORDS):
-            return {
-                "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
-                "guardrail_blocked": True,
-                "guardrail_reason": "Keyword fallback safety trigger",
-                "guardrail_category": "off_topic"
-            }
-        return {
-            "guardrail_blocked": False,
-            "guardrail_reason": "Keyword fallback safety bypass",
+            "guardrail_reason": "Theme toggle bypass",
             "guardrail_category": "spanish_learning"
         }
+
+    # D. Safe Spanish / Translation queries pre-check Bypass
+    _SAFE_INDICATORS = [
+        "¿", "¡", "como se dice", "how do you say", "translate", "how do i say",
+        "significa", "what does", "grammar", "pronounce", "español", "spanish",
+        "ingles", "english", "verb", "vocabulary", "lesson", "conjugate", "pronunciation"
+    ]
+    if any(ind in last_msg_lower for ind in _SAFE_INDICATORS):
+        logger.info("⚡ [Guardrails] Passed fast local pre-check (safe Spanish/translation query).")
+        return {
+            "guardrail_blocked": False,
+            "guardrail_reason": "Safe query bypass",
+            "guardrail_category": "spanish_learning"
+        }
+
+
+
+    # 2. Local Keyword safety filter
+    if any(kw in last_msg_lower for kw in _OFF_TOPIC_KEYWORDS):
+        logger.warning(f"🚨 [Guardrails] BLOCKED user input locally via keyword filter: '{last_msg_raw}'")
+        return {
+            "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
+            "guardrail_blocked": True,
+            "guardrail_reason": "Keyword safety filter block",
+            "guardrail_category": "off_topic"
+        }
+
+    # 3. Default to passing to the Tutor node (latency-optimized bypass)
+    logger.info("✅ [Guardrails] Bypassing LLM classification node to save latency. Passing directly to Tutor.")
+    return {
+        "guardrail_blocked": False,
+        "guardrail_reason": "Latency-optimized bypass",
+        "guardrail_category": "spanish_learning"
+    }
 
 
 # ============================================================================
@@ -306,7 +336,8 @@ If they're further along, you can introduce slightly more advanced concepts, but
 """.strip()
 
 
-def tutor_node(state: TutorState) -> dict:
+def prepare_tutor_messages(state: TutorState) -> List[BaseMessage]:
+    """Prepares and structures the complete message context for the AI Tutor node, running semantic RAG slides lookup."""
     user_name = state.get("user_name", "Amigo")
     completed_count = state.get("completed_lessons_count", 0)
     
@@ -314,41 +345,49 @@ def tutor_node(state: TutorState) -> dict:
     last_user_msg = state["messages"][-1].content
     context_str = ""
     db: Session = SessionLocal()
-    try:
-        # Convert user's query into embedding using gemini-embedding-2 (768 dimensions)
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        
-        query_text = f"task: search result | query: {last_user_msg}"
-        
-        emb_res = client.models.embed_content(
-            model=settings.GEMINI_EMBEDDING_MODEL,
-            contents=query_text,
-            config=types.EmbedContentConfig(output_dimensionality=768)
-        )
-        query_vector = emb_res.embeddings[0].values
-        
-        # Match semantic similarity in Neon Postgres using type-safe ORM cosine distance
-        distance_expr = LessonSlide.embedding.cosine_distance(query_vector)
-        stmt = select(LessonSlide, distance_expr.label("distance")).order_by(distance_expr).limit(3)
-        results = db.execute(stmt).all()
+    
+    global _embedding_blocked_until
+    if time.time() > _embedding_blocked_until:
+        try:
+            # Convert user's query into embedding using gemini-embedding-2 (768 dimensions)
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            
+            query_text = f"task: search result | query: {last_user_msg}"
+            
+            emb_res = client.models.embed_content(
+                model=settings.GEMINI_EMBEDDING_MODEL,
+                contents=query_text,
+                config=types.EmbedContentConfig(output_dimensionality=768)
+            )
+            query_vector = emb_res.embeddings[0].values
+            
+            # Match semantic similarity in Neon Postgres using type-safe ORM cosine distance
+            distance_expr = LessonSlide.embedding.cosine_distance(query_vector)
+            stmt = select(LessonSlide, distance_expr.label("distance")).order_by(distance_expr).limit(3)
+            results = db.execute(stmt).all()
 
-        
-        relevant_chunks = []
-        for slide, distance in results:
-            # High-relevance matching (distance < 0.65 represent top-tier matches)
-            if distance < 0.65:
-                chunk = f"[Lesson {slide.lesson_id} Slide {slide.slide_index}] {slide.content_text}"
-                if slide.explanation:
-                    chunk += f"\nExplanation: {slide.explanation}"
-                relevant_chunks.append(chunk)
-                
-        if relevant_chunks:
-            context_str = "\n---\n".join(relevant_chunks)
-            logger.info(f"🧠 [RAG System] Retrieved {len(relevant_chunks)} matching context reference slides!")
-    except Exception as e:
-        logger.error(f"⚠️ [RAG System] Context slide retrieval failed: {e}")
-    finally:
+            relevant_chunks = []
+            for slide, distance in results:
+                # High-relevance matching (distance < 0.65 represent top-tier matches)
+                if distance < 0.65:
+                    chunk = f"[Lesson {slide.lesson_id} Slide {slide.slide_index}] {slide.content_text}"
+                    if slide.explanation:
+                        chunk += f"\nExplanation: {slide.explanation}"
+                    relevant_chunks.append(chunk)
+                    
+            if relevant_chunks:
+                context_str = "\n---\n".join(relevant_chunks)
+                logger.info(f"🧠 [RAG System] Retrieved {len(relevant_chunks)} matching context reference slides!")
+        except Exception as e:
+            logger.error(f"⚠️ [RAG System] Context slide retrieval failed: {e}")
+            if "429" in str(e) or "quota" in str(e).lower() or "resource_exhausted" in str(e).lower():
+                _embedding_blocked_until = time.time() + 300.0
+                logger.warning("⏰ [RAG System] Embedding API quota hit. Bypassing embedding calls for 5 minutes.")
+        finally:
+            db.close()
+    else:
         db.close()
+        logger.info("⚡ [RAG System] Bypassing embedding call (rate limit cooldown active).")
 
     # Append reference context to system instruction if found
     tutor_prompt = _TUTOR_SYSTEM_PROMPT.format(
@@ -366,9 +405,33 @@ def tutor_node(state: TutorState) -> dict:
         )
 
     system_instruction = SystemMessage(content=tutor_prompt)
-    messages = [system_instruction] + state["messages"]
+    return [system_instruction] + state["messages"]
+
+
+def tutor_node(state: TutorState) -> dict:
+    messages = prepare_tutor_messages(state)
     response = invoke_with_fallback(messages, bind_toggle_theme=True)
     return {"messages": [response]}
+
+
+def stream_with_fallback(messages: list, bind_toggle_theme: bool = False):
+    """Streams token chunks from the active model, seamlessly falling back to backup if primary model quotas are hit."""
+    active = model_manager.get_active_model_name()
+    try:
+        model = get_model(active, bind_toggle_theme=bind_toggle_theme)
+        for chunk in model.stream(messages):
+            yield chunk
+    except Exception as e:
+        if model_manager.is_quota_error(e) and active == model_manager.primary_model:
+            model_manager.trigger_fallback()
+            try:
+                model = get_model(model_manager.backup_model, bind_toggle_theme=bind_toggle_theme)
+                for chunk in model.stream(messages):
+                    yield chunk
+            except Exception as backup_err:
+                logger.error(f"Backup model '{model_manager.backup_model}' also failed in stream: {backup_err}")
+                raise backup_err
+        raise e
 
 
 # ============================================================================
@@ -379,6 +442,7 @@ def save_memory_node(state: TutorState) -> dict:
     db: Session = SessionLocal()
     try:
         user_id = state["user_id"]
+        session_id = state.get("session_id")
 
         # Lazy-create the user row if it doesn't exist yet
         if not db.get(User, user_id):
@@ -391,16 +455,16 @@ def save_memory_node(state: TutorState) -> dict:
         # Walk backwards to find the latest human + AI message pair
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage) and not user_msg:
-                user_msg = msg.content
+                user_msg = extract_text_content(msg.content)
             elif isinstance(msg, AIMessage) and not assistant_msg:
-                assistant_msg = msg.content
+                assistant_msg = extract_text_content(msg.content)
             if user_msg and assistant_msg:
                 break
 
         if user_msg:
-            db.add(ChatMessage(user_id=user_id, role="user", content=user_msg))
+            db.add(ChatMessage(user_id=user_id, role="user", content=user_msg, session_id=session_id))
         if assistant_msg:
-            db.add(ChatMessage(user_id=user_id, role="assistant", content=assistant_msg))
+            db.add(ChatMessage(user_id=user_id, role="assistant", content=assistant_msg, session_id=session_id))
 
         db.commit()
     except Exception as e:
@@ -410,6 +474,38 @@ def save_memory_node(state: TutorState) -> dict:
         db.close()
 
     return {}
+
+
+# ============================================================================
+# TITLE GENERATION HELPER (used when creating a new chat session)
+# ============================================================================
+
+def generate_chat_title(first_message: str) -> str:
+    """Generates a brief 3-4 word title in Spanish summarizing the user's first message."""
+    try:
+        prompt = [
+            SystemMessage(content=(
+                "You are a helpful assistant. Generate a very brief, friendly title (maximum 3-4 words) "
+                "in Spanish summarizing the user's message. Do NOT use quotes, punctuation, or Markdown. "
+                "Keep it simple, active, and pleasant. Example input: 'How do I say thank you?' -> Example output: 'Agradecimientos en español'"
+            )),
+            HumanMessage(content=first_message)
+        ]
+        response = invoke_with_fallback(prompt)
+        title = extract_text_content(response.content).strip()
+        # Clean up quotes if the model ignored instructions
+        title = title.replace('"', '').replace("'", "").strip()
+        if not title:
+            raise ValueError("Empty title returned")
+        return title
+    except Exception as e:
+        logger.warning(f"Failed to generate chat title with AI: {e}")
+        # Elegant fallback: first 4 words of the message
+        words = first_message.split()
+        fallback_title = " ".join(words[:4])
+        if len(words) > 4:
+            fallback_title += "..."
+        return fallback_title if fallback_title else "Nueva conversación"
 
 
 # ============================================================================
@@ -430,7 +526,7 @@ def generate_explanation(spanish_sentence: str, english_translation: str) -> str
         )
     ]
     response = invoke_with_fallback(prompt)
-    return response.content
+    return extract_text_content(response.content)
 
 
 # ============================================================================

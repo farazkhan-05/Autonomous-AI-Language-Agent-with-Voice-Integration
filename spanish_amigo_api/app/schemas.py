@@ -35,12 +35,30 @@ class ChatRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=128)
     message: str = Field(..., min_length=1, max_length=2000)
     user_name: Optional[str] = Field("Amigo", max_length=100)
+    session_id: Optional[int] = None
 
 class ChatResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
     reply: str = Field(..., min_length=1)
     action_required: Optional[str] = None
+    session_id: Optional[int] = None
+
+
+class SessionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    user_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SessionUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    title: str = Field(..., min_length=1, max_length=255)
 
 
 class ExplainRequest(BaseModel):

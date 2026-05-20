@@ -43,5 +43,5 @@ async def get_status():
     return {
         "status": "healthy",
         "database": "connected",
-        "ai_engine": "gemini-2.5-flash ready"
+        "ai_engine": f"{settings.GEMINI_PRIMARY_MODEL} ready"
     }

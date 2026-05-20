@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, IconButton, TextField, Typography, Paper, CircularProgress, Fade } from '@mui/material';
-import { Bot, X, Send, User, Mic, Volume2, VolumeX } from 'lucide-react';
+import { Bot, X, Send, User, Mic, Volume2, VolumeX, Menu, Plus, Trash2, Edit3, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
 import { useProgress } from '../../context/ProgressContext';
@@ -14,6 +14,15 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  
+  // Multi-session State
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  
   const messagesEndRef = useRef(null);
 
   // Fetch real-time context
@@ -71,48 +80,140 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     scrollToBottom();
   }, [messages, isOpen, isLoading]);
 
-  // Load chat history from Neon Postgres DB when chatbot is opened
+  // Fetch all user chat sessions
+  const fetchSessions = async () => {
+    if (!user) return [];
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error("Failed to load sessions");
+      const data = await response.json();
+      setSessions(data);
+      return data;
+    } catch (error) {
+      console.error("Error fetching chat sessions:", error);
+      return [];
+    }
+  };
+
+  // Load history for a specific session
+  const loadSessionHistory = async (sessionId) => {
+    setIsHistoryLoading(true);
+    setMessages([]); // Instant wipe to prevent previous conversation leak
+    setIsLoading(false); // Stop any active typing loader
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/chat/history/session/${sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error("Failed to load session history");
+      const history = await response.json();
+      setMessages(history);
+    } catch (error) {
+      console.error("Error loading session history:", error);
+      setMessages([{ 
+        role: 'model', 
+        text: "¡Lo siento! I'm having trouble loading this conversation. 🔌" 
+      }]);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  // Create a brand new chat (reset state)
+  const handleStartNewChat = () => {
+    setActiveSessionId(null);
+    setIsLoading(false); // Reset active response spinner
+    const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
+    setMessages([
+      { 
+        role: 'model', 
+        text: `¡Hola ${userName}! 👋 Start typing to begin a new conversation. What Spanish vocabulary or grammar would you like to practice today? 🇪🇸` 
+      }
+    ]);
+    setIsDrawerOpen(false);
+  };
+
+  // Delete a session
+  const handleDeleteSession = async (sessionId, e) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this conversation?")) return;
+    
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error("Failed to delete session");
+      
+      const updated = sessions.filter(s => s.id !== sessionId);
+      setSessions(updated);
+      
+      if (activeSessionId === sessionId) {
+        if (updated.length > 0) {
+          setActiveSessionId(updated[0].id);
+          loadSessionHistory(updated[0].id);
+        } else {
+          handleStartNewChat();
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting session:", error);
+      alert("Failed to delete the session. Please try again.");
+    }
+  };
+
+  // Rename a session
+  const handleRenameSession = async (sessionId, newTitle, e) => {
+    e.stopPropagation();
+    if (!newTitle.trim()) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ title: newTitle })
+      });
+      if (!response.ok) throw new Error("Failed to rename session");
+      
+      const updatedSession = await response.json();
+      setSessions(prev => prev.map(s => s.id === sessionId ? updatedSession : s));
+      setEditingSessionId(null);
+    } catch (error) {
+      console.error("Error renaming session:", error);
+      alert("Failed to rename the session.");
+    }
+  };
+
+  // Load sessions when widget is opened, but default to a brand new conversation on initial load
   useEffect(() => {
     if (isOpen && user) {
-      const loadHistory = async () => {
-        setIsLoading(true);
-        try {
-          const token = await user.getIdToken();
-          const response = await fetch(`${API_BASE_URL}/chat/history/${user.uid}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          if (!response.ok) throw new Error("Failed to load chat history");
-          
-          const history = await response.json();
-          if (history.length > 0) {
-            setMessages(history);
-          } else {
-            // Seed default welcoming greeting if history is completely empty
-            const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
-            setMessages([
-              { 
-                role: 'model', 
-                text: `¡Hola ${userName}! 👋 I see you've completed ${completedLessons.length} lessons so far, nice work! I'm here to help you practice or translate whatever you need. Let's chat! What's on your mind? 😎` 
-              }
-            ]);
-          }
-        } catch (error) {
-          console.error("Error loading chat history:", error);
-          setMessages([{ 
-            role: 'model', 
-            text: "¡Lo siento! I'm having a little trouble connecting with my Spanish brain right now. Give me a moment to wake up! 🔌" 
-          }]);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
-      loadHistory();
+      // If we don't have an active session yet (initial reload/open), start fresh immediately (0ms wait)
+      if (!activeSessionId) {
+        handleStartNewChat();
+      }
+      // Quietly populate the drawer's session history in the background without blocking the UI
+      fetchSessions();
     }
   }, [isOpen, user]);
 
+  const handleSelectSession = (sessionId) => {
+    setActiveSessionId(sessionId);
+    loadSessionHistory(sessionId);
+    setIsDrawerOpen(false);
+  };
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -126,7 +227,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     try {
       const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
       const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/chat/send`, {
+      const response = await fetch(`${API_BASE_URL}/chat/send_stream`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -135,23 +236,86 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
         body: JSON.stringify({
           user_id: user.uid,
           message: userMessage,
-          user_name: userName
+          user_name: userName,
+          session_id: activeSessionId
         })
       });
 
-
       if (!response.ok) throw new Error("Backend chat service error");
-      const data = await response.json();
 
-      if (data.action_required === "TOGGLE_THEME" && typeof onToggleTheme === "function") {
-        onToggleTheme();
+      // Set up response body reader for SSE processing
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let finished = false;
+      let accumulatedReply = '';
+      let buffer = '';
+      let hasAppendedModelPlaceholder = false;
+
+      while (!finished) {
+        const { value, done } = await reader.read();
+        finished = done;
+        if (value) {
+          const chunkStr = decoder.decode(value, { stream: !done });
+          buffer += chunkStr;
+
+          // Split buffer by newlines to resolve complete SSE data lines
+          const lines = buffer.split('\n');
+          // Save any incomplete line back to the buffer
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+            
+            const dataStr = trimmed.slice(6); // remove 'data: ' prefix
+            if (dataStr === '[DONE]') continue;
+            
+            try {
+              const parsed = JSON.parse(dataStr);
+              
+              // 1. Dynamic Session ID Sync
+              if (parsed.session_id && parsed.session_id !== activeSessionId) {
+                setActiveSessionId(parsed.session_id);
+                fetchSessions();
+              }
+              
+              // 2. Theme Toggle Action Trigger
+              if (parsed.action_required === "TOGGLE_THEME" && typeof onToggleTheme === "function") {
+                onToggleTheme();
+              }
+              
+              // 3. Process Text Token Chunks
+              if (parsed.token) {
+                accumulatedReply += parsed.token;
+                
+                if (!hasAppendedModelPlaceholder) {
+                  // Append placeholder model bubble
+                  setMessages(prev => [...prev, { role: 'model', text: accumulatedReply }]);
+                  hasAppendedModelPlaceholder = true;
+                } else {
+                  // Stream update last model bubble text
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    if (updated.length > 0) {
+                      updated[updated.length - 1] = {
+                        role: 'model',
+                        text: accumulatedReply
+                      };
+                    }
+                    return updated;
+                  });
+                }
+              }
+            } catch (parsedErr) {
+              console.warn("Skipping partial or malformed chunk:", parsedErr, trimmed);
+            }
+          }
+        }
       }
 
-      if (data.reply) {
-        setMessages(prev => [...prev, { role: 'model', text: data.reply }]);
-        if (!isMuted) {
-          speakText(data.reply);
-        }
+      // If speech is enabled and voice exists, speak the full message
+      if (accumulatedReply && !isMuted) {
+        speakText(accumulatedReply);
       }
     } catch (error) {
       console.error("Chat sending error:", error);
@@ -229,6 +393,23 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <IconButton 
+                onClick={() => setIsDrawerOpen(!isDrawerOpen)} 
+                size="small" 
+                sx={{ 
+                  color: '#1A1A1A', 
+                  background: isDrawerOpen ? '#FF6B6B' : 'transparent',
+                  border: isDrawerOpen ? '2px solid #1A1A1A' : 'none',
+                  borderRadius: '6px',
+                  p: 0.5,
+                  mr: 0.5,
+                  '&:hover': {
+                    background: '#FF8787'
+                  }
+                }}
+              >
+                <Menu size={18} />
+              </IconButton>
               <Box sx={{ background: '#FFFFFF', p: 0.7, borderRadius: '8px', border: `2px solid #1A1A1A`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Bot size={20} />
               </Box>
@@ -254,134 +435,311 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
             </Box>
           </Box>
 
-          {/* Messages Area */}
-          <Box sx={{ flex: 1, p: 1.5, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5, backgroundColor: darkMode ? '#1A1A2E' : '#FFFDF2' }}>
-            {messages.map((msg, idx) => (
-              <Box
-                key={idx}
-                sx={{
-                  display: 'flex',
-                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                  gap: 1
-                }}
-              >
-                {msg.role === 'model' && (
-                  <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: '#4ECDC4', border: '2px solid #1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
-                    <Bot size={14} />
-                  </Box>
-                )}
-                <Box
-                  sx={{
-                    maxWidth: '82%',
-                    p: 1.5,
-                    borderRadius: '10px',
-                    background: msg.role === 'user' ? '#FF6B6B' : (darkMode ? '#3A3A5C' : '#FFFFFF'),
-                    color: msg.role === 'user' ? '#FFFFFF' : (darkMode ? '#F8FAFC' : '#1A1A1A'),
-                    border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`,
-                    boxShadow: `2px 2px 0px ${darkMode ? '#000' : '#1A1A1A'}`,
-                    typography: 'body2',
-                    lineHeight: 1.5,
+          <Box sx={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            
+            {/* Slide-out History Drawer */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: '100%',
+                zIndex: 10,
+                background: darkMode ? '#1A1A2E' : '#FFFDF2',
+                borderRight: isDrawerOpen ? `3px solid ${darkMode ? '#555' : '#1A1A1A'}` : 'none',
+                transform: isDrawerOpen ? 'translateX(0)' : 'translateX(-100%)',
+                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}
+            >
+              <Box sx={{ p: 1.5, borderBottom: `3px solid ${darkMode ? '#555' : '#1A1A1A'}`, background: darkMode ? '#252542' : '#FFE66D' }}>
+                <button
+                  onClick={handleStartNewChat}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: '#FF6B6B',
+                    color: '#FFFFFF',
+                    fontWeight: '900',
                     fontSize: '0.8rem',
-                    '& p': { m: 0, mb: 0.5, '&:last-child': { mb: 0 } },
-                    '& ul, & ol': { m: 0, pl: 2, mb: 0.5 },
-                    '& li': { mb: 0.25 },
-                    '& strong': { fontWeight: 800, color: msg.role === 'user' ? 'white' : (darkMode ? '#FFE66D' : '#1A1A1A') }
+                    border: '3px solid #1A1A1A',
+                    boxShadow: '3px 3px 0px #1A1A1A',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.1s ease',
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'translate(2px, 2px)';
+                    e.currentTarget.style.boxShadow = '1px 1px 0px #1A1A1A';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '3px 3px 0px #1A1A1A';
                   }}
                 >
-                  {msg.role === 'model' ? (
-                    <Box sx={{ position: 'relative', pr: 3 }}>
-                      <ReactMarkdown>{msg.text}</ReactMarkdown>
-                      <IconButton 
-                        onClick={() => speakText(msg.text)} 
-                        size="small" 
-                        sx={{ position: 'absolute', top: -8, right: -16, color: '#A0AEC0', '&:hover': { color: '#6C63FF' } }}
-                      >
-                        <Volume2 size={16} />
-                      </IconButton>
-                    </Box>
-                  ) : (
-                    <Box sx={{ whiteSpace: 'pre-wrap' }}>{msg.text}</Box>
-                  )}
-                </Box>
-                {msg.role === 'user' && (
-                  <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: darkMode ? '#3A3A5C' : '#FFE66D', border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
-                    <User size={14} />
+                  <Plus size={16} /> Nueva conversación
+                </button>
+              </Box>
+
+              <Box sx={{ flex: 1, overflowY: 'auto', p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {sessions.length === 0 ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="caption" sx={{ color: darkMode ? '#888' : '#666', fontWeight: 700 }}>
+                      No hay conversaciones aún.
+                    </Typography>
                   </Box>
+                ) : (
+                  sessions.map((sess) => {
+                    const isActive = sess.id === activeSessionId;
+                    const isEditing = sess.id === editingSessionId;
+                    
+                    return (
+                      <Box
+                        key={sess.id}
+                        onClick={() => !isEditing && handleSelectSession(sess.id)}
+                        sx={{
+                          p: 1.2,
+                          borderRadius: '10px',
+                          cursor: isEditing ? 'default' : 'pointer',
+                          background: isActive ? '#4ECDC4' : (darkMode ? '#252542' : '#FFFFFF'),
+                          color: '#1A1A1A',
+                          border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`,
+                          boxShadow: isActive ? 'none' : `3px 3px 0px ${darkMode ? '#000' : '#1A1A1A'}`,
+                          transform: isActive ? 'translate(2px, 2px)' : 'none',
+                          transition: 'all 0.15s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                          '&:hover': {
+                            background: isActive ? '#4ECDC4' : '#FF8787',
+                            transform: 'translate(-1px, -1px)',
+                            boxShadow: isActive ? 'none' : `4px 4px 0px ${darkMode ? '#000' : '#1A1A1A'}`,
+                          }
+                        }}
+                      >
+                        {isEditing ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, width: '100%' }} onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleRenameSession(sess.id, editingTitle, e);
+                                if (e.key === 'Escape') setEditingSessionId(null);
+                              }}
+                              autoFocus
+                              style={{
+                                width: '100%',
+                                padding: '3px 6px',
+                                borderRadius: '6px',
+                                border: '2px solid #1A1A1A',
+                                fontSize: '0.75rem',
+                                fontWeight: '700',
+                                background: '#FFF'
+                              }}
+                            />
+                            <IconButton onClick={(e) => handleRenameSession(sess.id, editingTitle, e)} size="small" sx={{ p: 0.5, color: '#1A1A1A' }}>
+                              <Check size={14} />
+                            </IconButton>
+                            <IconButton onClick={() => setEditingSessionId(null)} size="small" sx={{ p: 0.5, color: '#1A1A1A' }}>
+                              <X size={14} />
+                            </IconButton>
+                          </Box>
+                        ) : (
+                          <>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.2, overflow: 'hidden', width: '75%' }}>
+                              <Typography variant="body2" sx={{ fontWeight: 900, fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isActive ? '#1A1A1A' : (darkMode ? '#F8FAFC' : '#1A1A1A') }}>
+                                {sess.title}
+                              </Typography>
+                              <Typography variant="caption" sx={{ fontSize: '0.6rem', opacity: 0.7, fontWeight: 700, color: isActive ? '#1A1A1A' : (darkMode ? '#CBD5E1' : '#666') }}>
+                                {new Date(sess.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.2 }}>
+                              <IconButton
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingSessionId(sess.id);
+                                  setEditingTitle(sess.title);
+                                }}
+                                size="small"
+                                sx={{
+                                  p: 0.4,
+                                  color: isActive ? '#1A1A1A' : (darkMode ? '#F8FAFC' : '#1A1A1A'),
+                                  '&:hover': { background: 'rgba(0,0,0,0.1)' }
+                                }}
+                              >
+                                <Edit3 size={12} />
+                              </IconButton>
+                              <IconButton
+                                onClick={(e) => handleDeleteSession(sess.id, e)}
+                                size="small"
+                                sx={{
+                                  p: 0.4,
+                                  color: isActive ? '#1A1A1A' : (darkMode ? '#F8FAFC' : '#1A1A1A'),
+                                  '&:hover': { background: 'rgba(0,0,0,0.1)', color: '#FF6B6B' }
+                                }}
+                              >
+                                <Trash2 size={12} />
+                              </IconButton>
+                            </Box>
+                          </>
+                        )}
+                      </Box>
+                    );
+                  })
                 )}
               </Box>
-            ))}
-            {isLoading && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                 <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: '#4ECDC4', border: '2px solid #1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
-                    <Bot size={14} />
-                  </Box>
-                  <Box sx={{ p: 1.5, borderRadius: '10px', background: darkMode ? '#3A3A5C' : '#FFFFFF', border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`, boxShadow: `2px 2px 0px ${darkMode ? '#000' : '#1A1A1A'}` }}>
-                    <CircularProgress size={14} sx={{ color: '#4ECDC4' }} />
-                  </Box>
-              </Box>
-            )}
-            <div ref={messagesEndRef} />
-          </Box>
+            </Box>
 
-          {/* Input Area */}
-          <Box component="form" onSubmit={handleSend} sx={{ p: 1.5, background: darkMode ? '#252542' : '#FFE66D', borderTop: `3px solid ${darkMode ? '#555' : '#1A1A1A'}`, display: 'flex', gap: 1, alignItems: 'center' }}>
-            <IconButton
-              onClick={handleListen}
-              disabled={isLoading || isListening}
-              size="small"
-              sx={{
-                color: isListening ? '#FF6B6B' : (darkMode ? '#FFFFFF' : '#1A1A1A'),
-                backgroundColor: isListening ? 'rgba(255, 107, 107, 0.15)' : 'transparent',
-                animation: isListening ? 'pulse 1.5s infinite' : 'none',
-                '@keyframes pulse': {
-                  '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 107, 0.7)' },
-                  '70%': { transform: 'scale(1.1)', boxShadow: '0 0 0 8px rgba(255, 107, 107, 0)' },
-                  '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 107, 0)' }
-                }
-              }}
-            >
-              <Mic size={18} />
-            </IconButton>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Ask anything..."
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              disabled={isLoading}
-              sx={{
-                '& .MuiOutlinedInput-root': {
+            {/* Messages Area */}
+            <Box sx={{ flex: 1, p: 1.5, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5, backgroundColor: darkMode ? '#1A1A2E' : '#FFFDF2' }}>
+              {isHistoryLoading ? (
+                <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1.5 }}>
+                  <CircularProgress size={28} sx={{ color: '#4ECDC4' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: darkMode ? '#888' : '#666' }}>
+                    Cargando conversación...
+                  </Typography>
+                </Box>
+              ) : (
+                <>
+                  {messages.map((msg, idx) => (
+                    <Box
+                      key={idx}
+                      sx={{
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                        gap: 1
+                      }}
+                    >
+                      {msg.role === 'model' && (
+                        <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: '#4ECDC4', border: '2px solid #1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
+                          <Bot size={14} />
+                        </Box>
+                      )}
+                      <Box
+                        sx={{
+                          maxWidth: '82%',
+                          p: 1.5,
+                          borderRadius: '10px',
+                          background: msg.role === 'user' ? '#FF6B6B' : (darkMode ? '#3A3A5C' : '#FFFFFF'),
+                          color: msg.role === 'user' ? '#FFFFFF' : (darkMode ? '#F8FAFC' : '#1A1A1A'),
+                          border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`,
+                          boxShadow: `2px 2px 0px ${darkMode ? '#000' : '#1A1A1A'}`,
+                          typography: 'body2',
+                          lineHeight: 1.5,
+                          fontSize: '0.8rem',
+                          '& p': { m: 0, mb: 0.5, '&:last-child': { mb: 0 } },
+                          '& ul, & ol': { m: 0, pl: 2, mb: 0.5 },
+                          '& li': { mb: 0.25 },
+                          '& strong': { fontWeight: 800, color: msg.role === 'user' ? 'white' : (darkMode ? '#FFE66D' : '#1A1A1A') }
+                        }}
+                      >
+                        {msg.role === 'model' ? (
+                          <Box sx={{ position: 'relative', pr: 3 }}>
+                            <ReactMarkdown>{msg.text}</ReactMarkdown>
+                            <IconButton 
+                              onClick={() => speakText(msg.text)} 
+                              size="small" 
+                              sx={{ position: 'absolute', top: -8, right: -16, color: '#A0AEC0', '&:hover': { color: '#6C63FF' } }}
+                            >
+                              <Volume2 size={16} />
+                            </IconButton>
+                          </Box>
+                        ) : (
+                          <Box sx={{ whiteSpace: 'pre-wrap' }}>{msg.text}</Box>
+                        )}
+                      </Box>
+                      {msg.role === 'user' && (
+                        <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: darkMode ? '#3A3A5C' : '#FFE66D', border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
+                          <User size={14} />
+                        </Box>
+                      )}
+                    </Box>
+                  ))}
+                  {isLoading && messages[messages.length - 1]?.role === 'user' && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                       <Box sx={{ width: 28, height: 28, borderRadius: '8px', background: '#4ECDC4', border: '2px solid #1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1A1A1A', flexShrink: 0 }}>
+                          <Bot size={14} />
+                        </Box>
+                        <Box sx={{ p: 1.5, borderRadius: '10px', background: darkMode ? '#3A3A5C' : '#FFFFFF', border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}`, boxShadow: `2px 2px 0px ${darkMode ? '#000' : '#1A1A1A'}` }}>
+                          <CircularProgress size={14} sx={{ color: '#4ECDC4' }} />
+                        </Box>
+                    </Box>
+                  )}
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </Box>
+
+            {/* Input Area */}
+            <Box component="form" onSubmit={handleSend} sx={{ p: 1.5, background: darkMode ? '#252542' : '#FFE66D', borderTop: `3px solid ${darkMode ? '#555' : '#1A1A1A'}`, display: 'flex', gap: 1, alignItems: 'center' }}>
+              <IconButton
+                onClick={handleListen}
+                disabled={isLoading || isListening}
+                size="small"
+                sx={{
+                  color: isListening ? '#FF6B6B' : (darkMode ? '#FFFFFF' : '#1A1A1A'),
+                  backgroundColor: isListening ? 'rgba(255, 107, 107, 0.15)' : 'transparent',
+                  animation: isListening ? 'pulse 1.5s infinite' : 'none',
+                  '@keyframes pulse': {
+                    '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 107, 0.7)' },
+                    '70%': { transform: 'scale(1.1)', boxShadow: '0 0 0 8px rgba(255, 107, 107, 0)' },
+                    '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(255, 107, 107, 0)' }
+                  }
+                }}
+              >
+                <Mic size={18} />
+              </IconButton>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Ask anything..."
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={isLoading}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '10px',
+                    backgroundColor: darkMode ? '#1A1A2E' : '#FFFFFF',
+                    color: darkMode ? '#F8FAFC' : '#1A1A1A',
+                    fontSize: '0.85rem',
+                    '& fieldset': { border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}` },
+                  },
+                  '& input': {
+                    color: darkMode ? '#F8FAFC' : '#1A1A1A',
+                    py: 1,
+                  }
+                }}
+              />
+              <IconButton 
+                type="submit" 
+                disabled={!inputText.trim() || isLoading}
+                sx={{ 
+                  background: '#FF6B6B', 
+                  color: '#FFFFFF',
+                  border: '2px solid #1A1A1A',
+                  boxShadow: '2px 2px 0px #1A1A1A',
                   borderRadius: '10px',
-                  backgroundColor: darkMode ? '#1A1A2E' : '#FFFFFF',
-                  color: darkMode ? '#F8FAFC' : '#1A1A1A',
-                  fontSize: '0.85rem',
-                  '& fieldset': { border: `2px solid ${darkMode ? '#555' : '#1A1A1A'}` },
-                },
-                '& input': {
-                  color: darkMode ? '#F8FAFC' : '#1A1A1A',
-                  py: 1,
-                }
-              }}
-            />
-            <IconButton 
-              type="submit" 
-              disabled={!inputText.trim() || isLoading}
-              sx={{ 
-                background: '#FF6B6B', 
-                color: '#FFFFFF',
-                border: '2px solid #1A1A1A',
-                boxShadow: '2px 2px 0px #1A1A1A',
-                borderRadius: '10px',
-                minWidth: '36px',
-                height: '36px',
-                transition: 'all 0.15s ease',
-                '&:hover': { background: '#FF8787', transform: 'translate(-1px, -1px)', boxShadow: '3px 3px 0px #1A1A1A' },
-                '&:active': { transform: 'translate(2px, 2px)', boxShadow: '0px 0px 0px #1A1A1A' },
-                '&:disabled': { background: '#D1D5DB', color: '#9CA3AF', border: '2px solid #9CA3AF', boxShadow: 'none' }
-              }}
-            >
-              <Send size={16} />
-            </IconButton>
+                  minWidth: '36px',
+                  height: '36px',
+                  transition: 'all 0.15s ease',
+                  '&:hover': { background: '#FF8787', transform: 'translate(-1px, -1px)', boxShadow: '3px 3px 0px #1A1A1A' },
+                  '&:active': { transform: 'translate(2px, 2px)', boxShadow: '0px 0px 0px #1A1A1A' },
+                  '&:disabled': { background: '#D1D5DB', color: '#9CA3AF', border: '2px solid #9CA3AF', boxShadow: 'none' }
+                }}
+              >
+                <Send size={16} />
+              </IconButton>
+            </Box>
           </Box>
         </Paper>
       </Fade>
