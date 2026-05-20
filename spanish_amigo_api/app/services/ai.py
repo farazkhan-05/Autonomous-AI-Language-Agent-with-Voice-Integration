@@ -551,8 +551,20 @@ def generate_explanation(spanish_sentence: str, english_translation: str) -> str
             )
         )
     ]
-    response = invoke_with_fallback(prompt)
-    return extract_text_content(response.content)
+    try:
+        response = invoke_with_fallback(prompt)
+        explanation = extract_text_content(response.content).strip()
+        if explanation:
+            return explanation
+    except Exception as e:
+        logger.error(f"[Explain] Model call failed, using fallback explanation: {e}", exc_info=True)
+
+    # Deterministic fallback so the endpoint still returns useful content if AI is unavailable.
+    return (
+        f"\"{spanish_sentence}\" means \"{english_translation}\". "
+        "This is a common beginner phrase, so focus on pronunciation and practice it in short sentences. "
+        "Try repeating it out loud three times in a natural conversation tone."
+    )
 
 
 # ============================================================================

@@ -17,8 +17,13 @@ const RevealSlide = ({ data, onNext }) => {
       
       let headers = { 'Content-Type': 'application/json' };
       if (user) {
-        const token = await user.getIdToken();
-        headers['Authorization'] = `Bearer ${token}`;
+        try {
+          const token = await user.getIdToken();
+          headers['Authorization'] = `Bearer ${token}`;
+        } catch (tokenError) {
+          // /chat/explain is public, so we continue even if token refresh fails.
+          console.warn("Token fetch failed for /chat/explain, continuing without auth header.", tokenError);
+        }
       }
 
       const response = await fetch(`${API_BASE_URL}/chat/explain`, {
@@ -29,7 +34,16 @@ const RevealSlide = ({ data, onNext }) => {
           english_translation: data.question
         })
       });
-      if (!response.ok) throw new Error("Failed to get grammatical explanation from server.");
+      if (!response.ok) {
+        let backendDetail = "";
+        try {
+          const errJson = await response.json();
+          backendDetail = errJson?.detail ? ` (${errJson.detail})` : "";
+        } catch {
+          backendDetail = "";
+        }
+        throw new Error(`Failed to get grammatical explanation from server${backendDetail}`);
+      }
       const result = await response.json();
       setAiExplanation(result.explanation);
     } catch (error) {
