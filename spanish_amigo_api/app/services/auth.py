@@ -70,14 +70,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         logger.warning(f"[Auth] Token expired: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired. Please sign in again.",
+            detail="Authentication failed. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except auth.InvalidIdTokenError as e:
         logger.warning(f"[Auth] Token invalid: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token.",
+            detail="Authentication failed. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception as e:

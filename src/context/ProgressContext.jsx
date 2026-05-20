@@ -8,13 +8,20 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000
 export const ProgressProvider = ({ children }) => {
   const { user } = useAuth(); // Check who is logged in
   const [completedLessons, setCompletedLessons] = useState([]);
+  const normalizeLessonIds = (ids) => {
+    if (!Array.isArray(ids)) return [];
+    const normalized = ids
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    return [...new Set(normalized)].sort((a, b) => a - b);
+  };
 
   // 1. SYNC LOGIC (Runs when you login/logout)
   useEffect(() => {
     const loadProgress = async () => {
       // Fetch local storage fallback
       const saved = localStorage.getItem('spanishProgress');
-      const localProgress = saved ? JSON.parse(saved) : [];
+      const localProgress = normalizeLessonIds(saved ? JSON.parse(saved) : []);
 
       if (user) {
         // --- SCENARIO A: USER IS LOGGED IN ---
@@ -30,12 +37,8 @@ export const ProgressProvider = ({ children }) => {
           });
           if (!response.ok) throw new Error("Backend connection failed");
           
-          const dbProgress = await response.json(); // Array of lesson IDs e.g. ["1", "2"]
-          
-          // Merge cloud and local so no progress is lost
-          const mergedProgress = [...new Set([...dbProgress, ...localProgress])];
-          setCompletedLessons(mergedProgress);
-          localStorage.setItem('spanishProgress', JSON.stringify(mergedProgress));
+          const dbProgressRaw = await response.json(); // Array of lesson IDs e.g. ["1", "2"]
+          const dbProgress = normalizeLessonIds(dbProgressRaw);
 
           // If there are unsaved local items, upload them to Postgres
           const unsavedLessons = localProgress.filter(id => !dbProgress.includes(id));
@@ -54,6 +57,19 @@ export const ProgressProvider = ({ children }) => {
               })
             );
           }
+
+          // Read-after-write: server remains the source of truth.
+          const refreshToken = await user.getIdToken();
+          const refreshResponse = await fetch(`${API_BASE_URL}/progress/${user.uid}`, {
+            headers: {
+              'Authorization': `Bearer ${refreshToken}`
+            }
+          });
+          if (!refreshResponse.ok) throw new Error("Backend refresh failed");
+
+          const canonicalProgress = normalizeLessonIds(await refreshResponse.json());
+          setCompletedLessons(canonicalProgress);
+          localStorage.setItem('spanishProgress', JSON.stringify(canonicalProgress));
         } catch (error) {
           console.warn("⚠️ [SpanishAmigo] Fallback to local storage (Backend offline):", error);
           setCompletedLessons(localProgress);
@@ -69,8 +85,11 @@ export const ProgressProvider = ({ children }) => {
 
   // 2. SAVE LOGIC (Runs when you finish a lesson)
   const markLessonComplete = async (id) => {
-    if (!completedLessons.includes(id)) {
-      const newProgress = [...completedLessons, id];
+    const normalizedId = Number(id);
+    if (!Number.isInteger(normalizedId) || normalizedId <= 0) return;
+
+    if (!completedLessons.includes(normalizedId)) {
+      const newProgress = [...completedLessons, normalizedId].sort((a, b) => a - b);
       
       // Update UI and local storage instantly for snappy feedback
       setCompletedLessons(newProgress);
@@ -88,7 +107,7 @@ export const ProgressProvider = ({ children }) => {
             },
             body: JSON.stringify({
               user_id: user.uid,
-              lesson_id: String(id)
+              lesson_id: String(normalizedId)
             })
           });
           if (!response.ok) throw new Error("Failed to save progress to server");
@@ -107,4 +126,4 @@ export const ProgressProvider = ({ children }) => {
   );
 };
 
-export const useProgress = () => useContext(ProgressContext);
+export const useProgress = () => useContext(ProgressContext);

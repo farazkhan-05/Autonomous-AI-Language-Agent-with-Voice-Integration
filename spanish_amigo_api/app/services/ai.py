@@ -10,13 +10,15 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from google import genai
 from google.genai import types
+from starlette.concurrency import run_in_threadpool
 
 
 from app.config import get_settings
 from app.models import ChatMessage, User, LessonSlide, SystemStatus
-from app.database import SessionLocal
+from app.database import SessionLocal  # Backward-compatible symbol for legacy tests/mocks
 
 settings = get_settings()
 
@@ -68,6 +70,7 @@ class TutorState(TypedDict):
     guardrail_reason: Optional[str]
     guardrail_category: Optional[str]
     session_id: Optional[int]
+    db: Session
 
 
 # ============================================================================
@@ -79,9 +82,11 @@ class ModelManager:
         self.primary_model = settings.GEMINI_PRIMARY_MODEL
         self.backup_model = settings.GEMINI_BACKUP_MODEL
 
-    def get_active_model_name(self) -> str:
+    def get_active_model_name(self, db: Optional[Session] = None) -> str:
         """Fetch fallback status from database to ensure sync across multi-instance Cloud Run containers."""
-        db: Session = SessionLocal()
+        own_db = db is None
+        if db is None:
+            db = SessionLocal()
         try:
             row = db.get(SystemStatus, "fallback_until")
             if row:
@@ -95,27 +100,33 @@ class ModelManager:
         except Exception as e:
             logger.warning(f"Failed to read fallback status from DB: {e}")
         finally:
-            db.close()
+            if own_db:
+                db.close()
         return self.primary_model
 
-    def trigger_fallback(self):
+    def trigger_fallback(self, db: Optional[Session] = None):
         """Register the 1-hour fallback duration in the Neon database."""
-        db: Session = SessionLocal()
+        own_db = db is None
+        if db is None:
+            db = SessionLocal()
         try:
             fallback_until_str = str(time.time() + (1 * 60 * 60))
-            row = db.get(SystemStatus, "fallback_until")
-            if row:
-                row.value = fallback_until_str
-            else:
-                row = SystemStatus(key="fallback_until", value=fallback_until_str)
-                db.add(row)
+            stmt = pg_insert(SystemStatus).values(
+                key="fallback_until",
+                value=fallback_until_str
+            ).on_conflict_do_update(
+                index_elements=[SystemStatus.key],
+                set_={"value": fallback_until_str},
+            )
+            db.execute(stmt)
             db.commit()
             logger.warning(f"⚠️ Primary model '{self.primary_model}' hit quota. Switched to '{self.backup_model}' database-wide for 1 hour.")
         except Exception as e:
             logger.error(f"Failed to write fallback status to DB: {e}")
             db.rollback()
         finally:
-            db.close()
+            if own_db:
+                db.close()
 
     def is_quota_error(self, error: Exception) -> bool:
         msg = str(error).lower()
@@ -135,20 +146,25 @@ def get_model(model_name: str, bind_toggle_theme: bool = False) -> ChatGoogleGen
     return model
 
 
-def invoke_with_fallback(messages: list, bind_toggle_theme: bool = False) -> AIMessage:
+def invoke_with_fallback(messages: list, db: Optional[Session] = None, bind_toggle_theme: bool = False) -> AIMessage:
     """Invoke the active model. Switch to backup model on 429 quota exhaustion."""
-    active = model_manager.get_active_model_name()
+    active = model_manager.get_active_model_name(db)
     try:
         return get_model(active, bind_toggle_theme=bind_toggle_theme).invoke(messages)
     except Exception as e:
         if model_manager.is_quota_error(e) and active == model_manager.primary_model:
-            model_manager.trigger_fallback()
+            model_manager.trigger_fallback(db)
             try:
                 return get_model(model_manager.backup_model, bind_toggle_theme=bind_toggle_theme).invoke(messages)
             except Exception as backup_err:
                 logger.error(f"Backup model '{model_manager.backup_model}' also failed: {backup_err}")
                 raise backup_err
         raise e
+
+
+async def ainvoke_with_fallback(messages: list, db: Optional[Session] = None, bind_toggle_theme: bool = False) -> AIMessage:
+    """Run sync LangChain invoke in a threadpool to avoid blocking async endpoints."""
+    return await run_in_threadpool(invoke_with_fallback, messages, db, bind_toggle_theme)
 
 
 # ============================================================================
@@ -185,7 +201,7 @@ _OFF_TOPIC_REPLY = (
 # Traditional safety filter keywords used only as a secondary offline fallback
 _OFF_TOPIC_KEYWORDS = [
     "french", "arabic", "mandarin", "chinese", "german", "hindi", "japanese",
-    "python code", "javascript", "write code", "programming", "algebra",
+    "python code", "python script", "javascript", "write code", "programming", "algebra",
     "bitcoin", "crypto", "investment", "doctor", "medicine", "fever", "election"
 ]
 
@@ -274,11 +290,14 @@ def guardrails_node(state: TutorState) -> dict:
 
     # 2. Local Keyword safety filter
     if any(kw in last_msg_lower for kw in _OFF_TOPIC_KEYWORDS):
+        reason = "Keyword safety filter block"
+        if "python" in last_msg_lower:
+            reason = "Python coding help request blocked by keyword safety filter"
         logger.warning(f"🚨 [Guardrails] BLOCKED user input locally via keyword filter: '{last_msg_raw}'")
         return {
             "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
             "guardrail_blocked": True,
-            "guardrail_reason": "Keyword safety filter block",
+            "guardrail_reason": reason,
             "guardrail_category": "off_topic"
         }
 
@@ -337,7 +356,7 @@ If they're further along, you can introduce slightly more advanced concepts, but
 """.strip()
 
 
-def prepare_tutor_messages(state: TutorState) -> List[BaseMessage]:
+def prepare_tutor_messages(state: TutorState, db: Session) -> List[BaseMessage]:
     """Prepares and structures the complete message context for the AI Tutor node, running semantic RAG slides lookup."""
     user_name = state.get("user_name", "Amigo")
     completed_count = state.get("completed_lessons_count", 0)
@@ -345,7 +364,6 @@ def prepare_tutor_messages(state: TutorState) -> List[BaseMessage]:
     # RAG Vector Retrieval Layer
     last_user_msg = state["messages"][-1].content
     context_str = ""
-    db: Session = SessionLocal()
     
     global _embedding_blocked_until
     if time.time() > _embedding_blocked_until:
@@ -384,10 +402,7 @@ def prepare_tutor_messages(state: TutorState) -> List[BaseMessage]:
             if "429" in str(e) or "quota" in str(e).lower() or "resource_exhausted" in str(e).lower():
                 _embedding_blocked_until = time.time() + 300.0
                 logger.warning("⏰ [RAG System] Embedding API quota hit. Bypassing embedding calls for 5 minutes.")
-        finally:
-            db.close()
     else:
-        db.close()
         logger.info("⚡ [RAG System] Bypassing embedding call (rate limit cooldown active).")
 
     # Append reference context to system instruction if found
@@ -410,21 +425,27 @@ def prepare_tutor_messages(state: TutorState) -> List[BaseMessage]:
 
 
 def tutor_node(state: TutorState) -> dict:
-    messages = prepare_tutor_messages(state)
-    response = invoke_with_fallback(messages, bind_toggle_theme=True)
-    return {"messages": [response]}
+    own_db = state.get("db") is None
+    db = state.get("db") or SessionLocal()
+    try:
+        messages = prepare_tutor_messages(state, db)
+        response = invoke_with_fallback(messages, db, bind_toggle_theme=True)
+        return {"messages": [response]}
+    finally:
+        if own_db:
+            db.close()
 
 
 def stream_with_fallback(messages: list, bind_toggle_theme: bool = False):
     """Streams token chunks from the active model, seamlessly falling back to backup if primary model quotas are hit."""
-    active = model_manager.get_active_model_name()
+    active = model_manager.primary_model
     try:
         model = get_model(active, bind_toggle_theme=bind_toggle_theme)
         for chunk in model.stream(messages):
             yield chunk
     except Exception as e:
         if model_manager.is_quota_error(e) and active == model_manager.primary_model:
-            model_manager.trigger_fallback()
+            logger.warning("Sync stream fallback path cannot persist fallback state without request-scoped DB.")
             try:
                 model = get_model(model_manager.backup_model, bind_toggle_theme=bind_toggle_theme)
                 for chunk in model.stream(messages):
@@ -435,7 +456,7 @@ def stream_with_fallback(messages: list, bind_toggle_theme: bool = False):
         raise e
 
 
-async def astream_with_fallback(messages: list, bind_toggle_theme: bool = False):
+async def astream_with_fallback(messages: list, db: Session, bind_toggle_theme: bool = False):
     """
     Native async generator that streams token chunks without blocking the ASGI event loop.
     Uses LangChain's astream() for true non-blocking I/O. Falls back to backup model on quota errors.
@@ -443,14 +464,14 @@ async def astream_with_fallback(messages: list, bind_toggle_theme: bool = False)
     This is the industry-standard pattern: the event loop stays completely free between token
     yields, so Time-To-First-Token drops to <200ms regardless of DB/RAG overhead.
     """
-    active = model_manager.get_active_model_name()
+    active = model_manager.get_active_model_name(db)
     try:
         model = get_model(active, bind_toggle_theme=bind_toggle_theme)
         async for chunk in model.astream(messages):
             yield chunk
     except Exception as e:
         if model_manager.is_quota_error(e) and active == model_manager.primary_model:
-            model_manager.trigger_fallback()
+            model_manager.trigger_fallback(db)
             try:
                 model = get_model(model_manager.backup_model, bind_toggle_theme=bind_toggle_theme)
                 async for chunk in model.astream(messages):
@@ -465,8 +486,11 @@ async def astream_with_fallback(messages: list, bind_toggle_theme: bool = False)
 # MEMORY NODE — save conversation to Neon Postgres
 # ============================================================================
 
-def save_memory_node(state: TutorState) -> dict:
-    db: Session = SessionLocal()
+def save_memory_node(state: TutorState, db: Optional[Session] = None) -> dict:
+    db = db or state.get("db")
+    if db is None:
+        logger.error("save_memory_node called without database session")
+        return {}
     try:
         user_id = state["user_id"]
         user_email = state.get("user_email")
@@ -502,8 +526,6 @@ def save_memory_node(state: TutorState) -> dict:
     except Exception as e:
         logger.error(f"⚠️ Failed to save chat memory: {e}")
         db.rollback()
-    finally:
-        db.close()
 
     return {}
 
@@ -523,7 +545,7 @@ def generate_chat_title(first_message: str) -> str:
             )),
             HumanMessage(content=first_message)
         ]
-        response = invoke_with_fallback(prompt)
+        response = get_model(model_manager.primary_model).invoke(prompt)
         title = extract_text_content(response.content).strip()
         # Clean up quotes if the model ignored instructions
         title = title.replace('"', '').replace("'", "").strip()
@@ -558,7 +580,7 @@ def generate_explanation(spanish_sentence: str, english_translation: str) -> str
         )
     ]
     try:
-        response = invoke_with_fallback(prompt)
+        response = get_model(model_manager.primary_model).invoke(prompt)
         explanation = extract_text_content(response.content).strip()
         if explanation:
             return explanation

@@ -190,7 +190,8 @@ def send_chat_message(
         "user_name": payload.user_name,
         "user_email": current_email,
         "completed_lessons_count": completed_count,
-        "session_id": active_session_id
+        "session_id": active_session_id,
+        "db": db
     }
 
     try:
@@ -215,7 +216,7 @@ def send_chat_message(
         logger.error(f"Tutor graph execution failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Tutor service failed. Please try again."
+            detail="Something went wrong while generating a response. Please try again."
         )
 
 
@@ -311,7 +312,8 @@ def send_chat_message_stream(
         "user_name": payload.user_name,
         "user_email": current_email,
         "completed_lessons_count": completed_count,
-        "session_id": active_session_id
+        "session_id": active_session_id,
+        "db": db
     }
 
     async def sse_generator():
@@ -334,20 +336,20 @@ def send_chat_message_stream(
 
                 # Persist the safety exchange in a background thread (non-blocking)
                 state_input["messages"].append(AIMessage(content=reply_text))
-                await asyncio.to_thread(save_memory_node, state_input)
+                await asyncio.to_thread(save_memory_node, state_input, db)
                 yield "data: [DONE]\n\n"
                 return
 
             # 3. Guardrails passed: run heavy RAG + DB lookup in a background thread
             #    asyncio.to_thread delegates the blocking work to a worker thread so
             #    the ASGI event loop stays completely free while embeddings are computed.
-            tutor_messages = await asyncio.to_thread(prepare_tutor_messages, state_input)
+            tutor_messages = await asyncio.to_thread(prepare_tutor_messages, state_input, db)
 
             # 4. Stream response using async generator — zero event-loop blocking
             full_reply_text = ""
             action_required = None
 
-            async for chunk in astream_with_fallback(tutor_messages, bind_toggle_theme=True):
+            async for chunk in astream_with_fallback(tutor_messages, db, bind_toggle_theme=True):
                 content = extract_text_content(chunk.content)
                 if content:
                     full_reply_text += content
@@ -369,7 +371,7 @@ def send_chat_message_stream(
 
             # 5. Persist final chat response in a background thread (non-blocking)
             state_input["messages"].append(AIMessage(content=full_reply_text))
-            await asyncio.to_thread(save_memory_node, state_input)
+            await asyncio.to_thread(save_memory_node, state_input, db)
 
             # 6. Signal stream completion
             yield "data: [DONE]\n\n"
@@ -439,4 +441,4 @@ def explain_sentence(payload: ExplainRequest):
         return ExplainResponse(explanation=explanation_content)
     except Exception as e:
         logger.error(f"[Explain] AI explanation error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"AI Explanation error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Unable to generate explanation right now. Please try again.")
