@@ -49,7 +49,7 @@ export const ProgressProvider = ({ children }) => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${uploadToken}`
                   },
-                  body: JSON.stringify({ user_id: user.uid, lesson_id: lessonId })
+                  body: JSON.stringify({ user_id: user.uid, lesson_id: String(lessonId) })
                 });
               })
             );
@@ -88,7 +88,7 @@ export const ProgressProvider = ({ children }) => {
             },
             body: JSON.stringify({
               user_id: user.uid,
-              lesson_id: id
+              lesson_id: String(id)
             })
           });
           if (!response.ok) throw new Error("Failed to save progress to server");

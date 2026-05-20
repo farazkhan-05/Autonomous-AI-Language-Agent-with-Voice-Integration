@@ -41,45 +41,49 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     FastAPI security dependency to verify the Firebase ID token in the Authorization header.
     Returns the decoded token containing user identity details (e.g. 'uid', 'name', 'email').
     Raises a 401 Unauthorized exception if the token is missing, expired, or invalid.
+
+    In development mode (ENV=development), we skip the slow Firebase cryptographic
+    cert-fetch entirely and decode the JWT payload locally in <1ms. This prevents
+    the 12-second stall caused by external Google API latency on local machines.
     """
     token = credentials.credentials
     settings = get_settings()
+
+    # ── FAST PATH: development-only local decode (0ms, no network) ────────────
+    if settings.ENV == "development":
+        decoded = decode_unverified_token(token)
+        if decoded:
+            # Firebase stores uid under 'user_id', fallback to JWT 'sub'
+            if "uid" not in decoded:
+                decoded["uid"] = decoded.get("user_id") or decoded.get("sub", "")
+            if decoded.get("uid"):
+                logger.debug("[Auth] Dev mode: instant local JWT decode (<1ms), uid=%s", decoded["uid"])
+                return decoded
+        # If local decode fails, fall through to full verification below
+        logger.warning("[Auth] Dev mode: local JWT decode failed, attempting full Firebase verification.")
+
+    # ── PRODUCTION PATH: cryptographic verification against Google certs ──────
     try:
-        # Verify the ID token cryptographically against Google's public certs
         decoded_token = auth.verify_id_token(token)
         return decoded_token
+    except auth.ExpiredIdTokenError as e:
+        logger.warning(f"[Auth] Token expired: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except auth.InvalidIdTokenError as e:
+        logger.warning(f"[Auth] Token invalid: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except Exception as e:
-        # Development fallback: decode token payload without signature verification if in development mode
-        if settings.ENV == "development":
-            logger.info("Firebase verification failed. Attempting unverified payload decode for local development.")
-            decoded = decode_unverified_token(token)
-            if decoded:
-                if "uid" not in decoded and "user_id" in decoded:
-                    decoded["uid"] = decoded["user_id"]
-                elif "uid" not in decoded and "sub" in decoded:
-                    decoded["uid"] = decoded["sub"]
-                if "uid" in decoded:
-                    return decoded
-
-        # Production error handling
-        if isinstance(e, auth.ExpiredIdTokenError):
-            logger.warning(f"Firebase token expired: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired. Please sign in again.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        elif isinstance(e, auth.InvalidIdTokenError):
-            logger.warning(f"Firebase token invalid: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        else:
-            logger.error(f"Firebase verification unexpected error: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Authentication failed: {str(e)}",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        logger.error(f"[Auth] Unexpected verification error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed. Please try again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

@@ -11,7 +11,7 @@ from typing import List
 from app.database import get_db
 from app.models import ChatMessage, CompletedLesson, ChatSession, User
 from app.schemas import ChatRequest, ChatResponse, ExplainRequest, ExplainResponse, SessionResponse, SessionUpdate
-from app.services.ai import tutor_graph, generate_explanation, extract_text_content, generate_chat_title
+from app.services.ai import tutor_graph, generate_explanation, extract_text_content, generate_chat_title, astream_with_fallback
 from app.services.auth import get_current_user
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -205,6 +205,9 @@ def send_chat_message(
             reply=reply_content,
             action_required=action_required,
             session_id=active_session_id
+        )
+    except Exception as e:
+        logger.error(f"Tutor graph execution failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Tutor service failed. Please try again."
@@ -302,71 +305,72 @@ def send_chat_message_stream(
     }
 
     async def sse_generator():
-        from app.services.ai import guardrails_node, prepare_tutor_messages, stream_with_fallback, save_memory_node
+        from app.services.ai import guardrails_node, prepare_tutor_messages, save_memory_node
         try:
-            # 1. Yield active session ID immediately to client
+            # 1. Yield active session ID immediately so client can bind new conversations instantly
             yield f"data: {json.dumps({'session_id': active_session_id})}\n\n"
-            await asyncio.sleep(0.01)
 
-            # 2. Run fast local guardrails
+            # 2. Run fast local guardrails (pure Python, no I/O, <1ms)
             guardrail_res = guardrails_node(state_input)
 
             if guardrail_res.get("guardrail_blocked", False):
-                # Guardrails blocked: stream off-topic warning word-by-word with premium delay feel
+                # Guardrails blocked: stream the off-topic reply word-by-word for premium feel
                 reply_text = guardrail_res["messages"][-1].content
                 words = reply_text.split()
                 for i, w in enumerate(words):
                     space = " " if i > 0 else ""
                     yield f"data: {json.dumps({'token': space + w})}\n\n"
                     await asyncio.sleep(0.02)
-                
-                # Save safety safety sequence to database
+
+                # Persist the safety exchange in a background thread (non-blocking)
                 state_input["messages"].append(AIMessage(content=reply_text))
-                save_memory_node(state_input)
+                await asyncio.to_thread(save_memory_node, state_input)
                 yield "data: [DONE]\n\n"
                 return
 
-            # 3. Guardrails passed: prepare prompting and semantics RAG layers
-            tutor_messages = prepare_tutor_messages(state_input)
+            # 3. Guardrails passed: run heavy RAG + DB lookup in a background thread
+            #    asyncio.to_thread delegates the blocking work to a worker thread so
+            #    the ASGI event loop stays completely free while embeddings are computed.
+            tutor_messages = await asyncio.to_thread(prepare_tutor_messages, state_input)
 
-            # 4. Stream response using active dynamic fallback model
+            # 4. Stream response using async generator — zero event-loop blocking
             full_reply_text = ""
             action_required = None
 
-            for chunk in stream_with_fallback(tutor_messages, bind_toggle_theme=True):
-                # Stream token content
-                content = chunk.content
+            async for chunk in astream_with_fallback(tutor_messages, bind_toggle_theme=True):
+                content = extract_text_content(chunk.content)
                 if content:
                     full_reply_text += content
                     yield f"data: {json.dumps({'token': content})}\n\n"
 
-                # Check for theme toggle tools
+                # Detect theme-toggle tool calls
                 if hasattr(chunk, "tool_calls") and chunk.tool_calls:
                     for tc in chunk.tool_calls:
                         if tc.get("name") == "toggle_theme":
                             action_required = "TOGGLE_THEME"
                             break
 
-            # Handle toggle theme overrides
+            # Handle theme toggle overrides
             if action_required == "TOGGLE_THEME":
                 theme_reply = "¡Claro! Switched the theme. 😎"
                 yield f"data: {json.dumps({'token': theme_reply})}\n\n"
                 yield f"data: {json.dumps({'action_required': 'TOGGLE_THEME'})}\n\n"
                 full_reply_text = theme_reply
 
-            # 5. Persist final chat response to Neon database
+            # 5. Persist final chat response in a background thread (non-blocking)
             state_input["messages"].append(AIMessage(content=full_reply_text))
-            save_memory_node(state_input)
+            await asyncio.to_thread(save_memory_node, state_input)
 
-            # 6. Yield standard final event
+            # 6. Signal stream completion
             yield "data: [DONE]\n\n"
 
         except Exception as stream_err:
-            logger.error(f"SSE response generator error: {stream_err}", exc_info=True)
+            logger.error(f"[SSE] Response generator error: {stream_err}", exc_info=True)
             yield f"data: {json.dumps({'token': '⚠️ Lo siento, I hit an unexpected error during response generation.'})}\n\n"
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
 
 
 # 3. Fetch all chat sessions for the current user
@@ -419,11 +423,11 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
 
 
 @router.post("/explain", response_model=ExplainResponse)
-def explain_sentence(payload: ExplainRequest, current_user: dict = Depends(get_current_user)):
+def explain_sentence(payload: ExplainRequest):
     try:
         explanation_content = generate_explanation(payload.spanish_sentence, payload.english_translation)
         return ExplainResponse(explanation=explanation_content)
     except Exception as e:
+        logger.error(f"[Explain] AI explanation error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"AI Explanation error: {str(e)}")
-
 
