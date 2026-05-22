@@ -1,141 +1,232 @@
 # Autonomous AI Language Agent with Voice Integration
 
-A Spanish learning web application built with React and the Google Gemini SDK. The AI in this app goes beyond standard chatbot behavior. It listens to your voice, speaks back in Spanish, understands your progress, and can control the interface itself based on what you say.
+SpanishAmigo is a Spanish learning web app with structured lessons and an AI tutor named Lumi. It combines a simple lesson path with contextual chat support, voice input, speech playback, and saved learning progress.
 
-**Live Demo:** [spanishamigo.vercel.app](https://spanishamigo.vercel.app/)
+The project started as a frontend learning app and now includes a FastAPI backend for progress sync, chat memory, streamed AI responses, and lesson-aware retrieval.
 
----
+## What It Solves
 
-## What I built and why
+Most beginner language apps keep the lesson flow separate from help and explanation. SpanishAmigo keeps both close together:
 
-I have been picking up Spanish for a while and got frustrated with existing apps feeling too rigid. So I decided to build my own, and used it as an opportunity to implement three AI engineering concepts I had been curious about: LLM Function Calling, Voice User Interfaces, and Retrieval-Augmented Generation. The language learning context gave me a real product to build around rather than an isolated proof of concept.
+- Learners move through short, guided Spanish lessons.
+- They can ask Lumi for help without leaving the app.
+- Progress works for guests through local storage and syncs to the backend for signed-in users.
+- The AI tutor can use lesson context and prior chat history when responding.
 
----
+## Current Features
 
-## Technical highlights
+- Five structured Spanish lessons built from context, translation reveal, and practice quiz slides
+- Course map with lesson locking, completion states, progress stats, and achievement badges
+- Lesson player with progress tracking, hints, feedback, and a completion screen
+- Google sign-in through Firebase Authentication
+- Guest progress stored in `localStorage`
+- Signed-in progress synced through FastAPI to Postgres
+- Floating AI tutor with streamed responses from the backend
+- Multi-session chat history with create, rename, delete, and reload support
+- Browser speech recognition for Spanish voice input
+- Browser speech synthesis for reading tutor responses aloud
+- AI-generated short explanations for translation reveal cards
+- Manual light and dark mode toggle
+- AI tool call support for changing the theme from chat
+- Backend guardrails to keep chat focused on Spanish learning
+- Optional semantic lesson retrieval using Gemini embeddings and pgvector
 
-### LLM Function Calling (Agentic AI)
+## High-Level Architecture
 
-The AI tutor does not just respond with text. It can take actions inside the application.
+### Frontend
 
-If you type something like "my eyes hurt, can you turn the lights off", the app switches to dark mode on its own. Under the hood, a `toggle_dark_mode` tool is declared using an OpenAPI JSON schema and passed to the Gemini model via the `tools` parameter. When the model detects the intent, it returns a `functionCall` payload instead of plain text. The React app intercepts that, fires the callback, updates global state, and returns a `functionResponse` so the model can confirm the action naturally in the conversation.
+The frontend is a Vite React app. It handles routing, lesson UI, authentication state, progress state, the global layout, and the chat widget.
 
-This is the core pattern behind what the industry calls Agentic AI and LLM Function Calling.
+Key frontend pieces:
 
-### Voice User Interface (VUI)
+- `src/App.jsx` wires the app providers, theme, layout, and routes.
+- `src/components/layout/Layout.jsx` owns the app shell, sign-in controls, theme toggle, and global chatbot.
+- `src/context/AuthContext.jsx` handles Firebase Google sign-in and auth state.
+- `src/context/ProgressContext.jsx` manages completed lessons and syncs with the backend when possible.
+- `src/pages/CourseMap.jsx` shows the lesson path and progress.
+- `src/pages/LessonPlayer.jsx` runs the slide-based lesson flow.
+- `src/components/chat/GlobalChatbot.jsx` handles chat sessions, streaming, voice input, and speech playback.
 
-The app supports full bidirectional voice with no third-party audio APIs and no added cost.
+### Backend
 
-Speech-to-Text is handled by `window.SpeechRecognition` configured to `lang: 'es-ES'`, which tunes the browser's acoustic model for Spanish phonetics. Text-to-Speech uses `SpeechSynthesisUtterance` with logic that maps over `window.speechSynthesis.getVoices()` at runtime to detect and lock in a native Spanish voice rather than defaulting to a generic English one. Before any AI response reaches the audio engine, a Regex pipeline strips Markdown tokens like asterisks and hashes so the spoken output sounds clean and natural.
+The backend lives in `spanish_amigo_api/` and is built with FastAPI. It verifies Firebase ID tokens, stores user data in Postgres, streams AI chat responses, and runs the AI tutor workflow.
 
-Everything runs natively in the browser through the HTML5 Web Speech API.
+Key backend pieces:
 
-### Retrieval-Augmented Generation (RAG)
-
-The tutor is context-aware from the moment you open it. It knows your name and exactly how many lessons you have completed before you say a word.
-
-When the Gemini chat session initialises, the app harvests the user's display name from Firebase Authentication and their lesson progress from a React Context. That data is injected directly into the model's `systemInstruction` payload at runtime. The model is then prompt-engineered to reference this information naturally in conversation, congratulating you on real milestones and nudging you toward your next lesson.
-
-This follows the same principle as Retrieval-Augmented Generation. The retrieval step is reading live application state rather than querying a vector database, which keeps the architecture lightweight and fully client-side.
-
----
-
-## Features
-
-- Five structured Spanish lessons covering greetings, verbs, dining, navigation, and real-world conversation scenarios
-- Progressive lesson locking so content unlocks as you complete each stage
-- Google Sign-In via Firebase Authentication
-- Progress saved to Cloud Firestore and synced across devices
-- Dark mode toggle controllable manually or through a voice command to the AI
-- Neo-Brutalist UI design with flat colors, thick borders, and offset block shadows
-- Fully responsive on mobile and desktop
-
----
+- `spanish_amigo_api/main.py` creates the FastAPI app and registers routers.
+- `app/routers/progress.py` exposes progress read and completion endpoints.
+- `app/routers/chat.py` exposes chat, streaming, session management, and explanation endpoints.
+- `app/services/auth.py` verifies Firebase bearer tokens.
+- `app/services/ai.py` contains the LangGraph tutor flow, guardrails, model fallback logic, tools, memory saving, and RAG lookup.
+- `app/models.py` defines users, completed lessons, chat sessions, chat messages, lesson slides, and system status records.
+- `migrations/` contains Alembic migrations for the database schema.
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend Framework | React 18, Vite |
-| Routing | React Router DOM v6 |
-| UI Component Library | Material UI (MUI v5) |
-| Icons | Lucide React |
-| AI Model | Google Gemini via `@google/generative-ai` SDK |
-| AI Techniques | Function Calling, Prompt Engineering, Multi-turn Chat, RAG |
-| Voice | HTML5 Web Speech API (SpeechRecognition + SpeechSynthesis) |
-| Authentication | Firebase Authentication (Google OAuth) |
-| Database | Cloud Firestore |
-| Deployment | Vercel |
-
----
-
-## Running locally
-
-```bash
-git clone https://github.com/farazkhan-05/spanishAmigo.git
-cd spanishAmigo
-npm install
-npm run dev
-```
-
-### Environment setup
-
-Create a `.env.local` file in the project root with the following keys:
-
-```env
-VITE_FIREBASE_API_KEY=your_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-VITE_GEMINI_API_KEY=your_gemini_api_key
-```
-
-A free Gemini API key is available at [aistudio.google.com](https://aistudio.google.com/).
-
----
+| Area | Technology |
+| --- | --- |
+| Frontend | React 19, Vite |
+| Routing | React Router 7 |
+| UI | Material UI 7, Lucide React, Tailwind CSS |
+| Auth | Firebase Authentication |
+| Backend | FastAPI, Uvicorn |
+| AI | Google Gemini, LangChain, LangGraph |
+| Data | Neon Postgres or compatible Postgres |
+| Vector Search | pgvector |
+| ORM and Migrations | SQLAlchemy 2.0, Alembic |
+| Package Management | npm, uv |
 
 ## Project Structure
 
+```text
+.
++-- src/
+|   +-- components/
+|   |   +-- chat/              # Global AI tutor widget
+|   |   +-- layout/            # App shell and navigation
+|   |   +-- lesson/            # Lesson slide components
+|   +-- context/               # Auth and progress providers
+|   +-- data/                  # Lesson registry and lesson files
+|   +-- hooks/                 # Lesson navigation logic
+|   +-- pages/                 # Course map and lesson player
+|   +-- theme/                 # MUI theme
+|   +-- utils/                 # Small browser utilities
++-- spanish_amigo_api/
+|   +-- app/
+|   |   +-- routers/           # FastAPI route modules
+|   |   +-- services/          # Auth and AI services
+|   |   +-- config.py
+|   |   +-- database.py
+|   |   +-- models.py
+|   |   +-- schemas.py
+|   +-- migrations/            # Alembic migrations
+|   +-- main.py                # API entry point
+|   +-- seed_embeddings.py     # Optional lesson embedding seeder
++-- parse_lessons.js           # Builds lesson JSON for embedding seed data
++-- lessons_data.json          # Generated lesson slide data
++-- package.json
 ```
-src/
-├── components/
-│   ├── chat/
-│   │   └── GlobalChatbot.jsx       # AI tutor: Function Calling, STT, TTS, RAG context injection
-│   └── layout/
-│       └── Layout.jsx              # Navbar, footer, global dark mode state
-├── context/
-│   ├── AuthContext.jsx             # Firebase auth state
-│   └── ProgressContext.jsx         # Lesson progress synced with Firestore
-├── data/
-│   ├── lessons/                    # lesson1.js through lesson5.js
-│   └── curriculum.js               # Lesson index and metadata
-├── firebase.js                     # Firebase initialisation and config
-├── hooks/
-│   └── useLessonNavigation.js      # Slide and quiz progression logic
-├── pages/
-│   ├── CourseMap.jsx               # Lesson map with locked and unlocked states
-│   ├── LessonPlayer.jsx            # Lesson runtime container
-│   └── lesson/
-│       ├── ContextSlide.jsx        # Introduction and context slides
-│       ├── QuizSlide.jsx           # Multiple choice quizzes with feedback
-│       ├── RevealSlide.jsx         # Translation reveal cards
-│       └── SuccessScreen.jsx       # Lesson completion screen
-├── theme/
-│   └── theme.js                    # MUI theme with Neo-Brutalism configuration
-└── utils/
-    └── gemini.js                   # Gemini session factory and tool declarations
+
+## Setup
+
+### Prerequisites
+
+- Node.js and npm
+- Python 3.12 or newer
+- `uv` for the backend Python environment
+- A Firebase project with Google sign-in enabled
+- A Postgres database, preferably Neon Postgres with pgvector support
+- A Gemini API key
+
+### Frontend
+
+Install dependencies from the project root:
+
+```bash
+npm install
 ```
 
----
+Create `.env.local` in the project root:
 
-## Adding new lessons
+```env
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
+VITE_FIREBASE_PROJECT_ID=your_firebase_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
+VITE_FIREBASE_APP_ID=your_firebase_app_id
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
 
-Create a new file in `src/data/lessons/` following the same structure as the existing ones and register it in `curriculum.js`. The lesson player, course map, and progress tracking all pick it up automatically with no other changes needed.
+Run the frontend:
 
----
+```bash
+npm run dev
+```
 
-## License
+### Backend
 
-MIT
+From the backend directory:
+
+```bash
+cd spanish_amigo_api
+uv sync
+```
+
+Create `spanish_amigo_api/.env`:
+
+```env
+ENV=development
+DATABASE_URL=postgresql+psycopg://user:password@host:5432/database
+GEMINI_API_KEY=your_gemini_api_key
+FRONTEND_URL=http://localhost:5173
+```
+
+Optional model overrides:
+
+```env
+GEMINI_PRIMARY_MODEL=gemini-3.1-flash-lite
+GEMINI_BACKUP_MODEL=gemma-4-31b
+GEMINI_EMBEDDING_MODEL=gemini-embedding-2
+```
+
+Apply database migrations:
+
+```bash
+uv run alembic upgrade head
+```
+
+Run the API:
+
+```bash
+uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The frontend expects the backend at `http://127.0.0.1:8000` unless `VITE_API_BASE_URL` is changed.
+
+## Optional RAG Setup
+
+The backend can retrieve relevant lesson-slide context through pgvector. To seed those embeddings:
+
+```bash
+node parse_lessons.js
+cd spanish_amigo_api
+uv run python seed_embeddings.py
+```
+
+This requires a working `DATABASE_URL`, `GEMINI_API_KEY`, and a database that supports the `vector` extension.
+
+## Useful Commands
+
+Frontend:
+
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run preview
+```
+
+Backend:
+
+```bash
+cd spanish_amigo_api
+uv run uvicorn main:app --reload
+uv run alembic upgrade head
+uv run python -m unittest discover tests
+```
+
+## Developer Notes
+
+- `src/pages/Home.jsx` and `src/pages/NotFound.jsx` exist but are not part of the current route tree.
+- `src/utils/storage.js` appears to be legacy. Current progress handling is in `ProgressContext.jsx`.
+- `src/firebase.js` exports Firestore, but current progress sync uses the FastAPI backend and Postgres.
+- The backend development auth path decodes Firebase JWTs locally for speed. Production should use verified Firebase token checks.
+- `POST /chat/explain` is public because it does not read or write user-scoped data.
+- The app can still work as a guest if the backend is unavailable, but signed-in progress sync and chat features require the API.
+
+## Status
+
+The main product flow is implemented: course map, lessons, completion tracking, Google sign-in, backend progress sync, and AI tutor chat. The backend has migrations, tests for guardrails and RAG-related behavior, and a seeding path for lesson embeddings.
+
+Deployment support is partial. The frontend includes Vercel routing configuration. Backend deployment files such as Docker and CI/CD are not present in the current codebase.
