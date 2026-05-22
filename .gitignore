@@ -34,6 +34,14 @@ dist-ssr
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+*.sqlite
+*.sqlite3
+*.db
 
 # Local Architecture Checklist Copy
 BACKEND_ARCHITECTURE_CHECKLIST.md
@@ -42,4 +50,3 @@ parse_lessons.js
 lessons_data.json
 src/chatt.txt
 PROJECT_CONTEXT.md
-
