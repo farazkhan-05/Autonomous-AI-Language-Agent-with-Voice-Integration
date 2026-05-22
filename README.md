@@ -218,8 +218,7 @@ uv run python -m unittest discover tests
 
 ## Developer Notes
 
-- `src/pages/Home.jsx` and `src/pages/NotFound.jsx` exist but are not part of the current route tree.
-- `src/utils/storage.js` appears to be legacy. Current progress handling is in `ProgressContext.jsx`.
+- `src/pages/Home.jsx` exists but is not part of the current route tree.
 - `src/firebase.js` exports Firestore, but current progress sync uses the FastAPI backend and Postgres.
 - The backend development auth path decodes Firebase JWTs locally for speed. Production should use verified Firebase token checks.
 - `POST /chat/explain` is public because it does not read or write user-scoped data.
