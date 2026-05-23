@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Box, Container, IconButton, LinearProgress, Typography, Chip } from '@mui/material';
 import { X, Award, Zap, Heart, Target, TrendingUp } from 'lucide-react';
@@ -20,6 +20,7 @@ const LessonPlayer = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [slideTransition, setSlideTransition] = useState(false);
   const [streak, setStreak] = useState(0);
+  const completionTimerRef = useRef(null);
 
   const lessonId = parseInt(id);
   const lesson = courseData.find((l) => l.id === lessonId);
@@ -30,10 +31,19 @@ const LessonPlayer = () => {
 
   const handleLessonFinish = () => {
     markLessonComplete(lessonId);
-    setTimeout(() => {
+    if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+    const timer = setTimeout(() => {
       setIsCompleted(true);
+      completionTimerRef.current = null;
     }, 300);
+    completionTimerRef.current = timer;
   };
+
+  useEffect(() => {
+    return () => {
+      if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+    };
+  }, []);
 
   const { 
     currentSlide, 

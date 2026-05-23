@@ -24,12 +24,42 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   
   const messagesEndRef = useRef(null);
+  const spanishVoicesRef = useRef([]);
 
   // Fetch real-time context
   const { user } = useAuth();
   const { completedLessons } = useProgress();
 
   // Text-to-Speech (TTS)
+  useEffect(() => {
+    if (!window.speechSynthesis) return undefined;
+
+    const synth = window.speechSynthesis;
+    const previousOnVoicesChanged = synth.onvoiceschanged;
+
+    const loadSpanishVoices = () => {
+      spanishVoicesRef.current = synth
+        .getVoices()
+        .filter(v => v.lang.startsWith('es-') || v.name.includes('Spanish'));
+    };
+
+    const handleVoicesChanged = (event) => {
+      if (typeof previousOnVoicesChanged === 'function') {
+        previousOnVoicesChanged.call(synth, event);
+      }
+      loadSpanishVoices();
+    };
+
+    loadSpanishVoices();
+    synth.onvoiceschanged = handleVoicesChanged;
+
+    return () => {
+      if (synth.onvoiceschanged === handleVoicesChanged) {
+        synth.onvoiceschanged = previousOnVoicesChanged;
+      }
+    };
+  }, []);
+
   const speakText = (text) => {
     if (!window.speechSynthesis || isMuted) return;
     
@@ -42,8 +72,8 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       .trim();
     if (!cleanText) return;
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    const voices = window.speechSynthesis.getVoices();
-    const spanishVoice = voices.find(v => v.lang.startsWith('es-') || v.name.includes('Spanish'));
+    const spanishVoice = spanishVoicesRef.current[0]
+      || window.speechSynthesis.getVoices().find(v => v.lang.startsWith('es-') || v.name.includes('Spanish'));
     if (spanishVoice) {
       utterance.voice = spanishVoice;
     } else {

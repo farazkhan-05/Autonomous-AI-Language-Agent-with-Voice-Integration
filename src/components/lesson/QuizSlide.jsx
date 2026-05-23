@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Typography, Button, Chip } from '@mui/material';
 import { CheckCircle, XCircle, Target, Zap, AlertCircle, Lightbulb } from 'lucide-react';
 
@@ -8,13 +8,19 @@ const QuizSlide = ({ data, onNext }) => {
   const [shakeOption, setShakeOption] = useState(null);
   const [attempts, setAttempts] = useState(0);
   const [showHint, setShowHint] = useState(false);
+  const resetTimerRef = useRef(null);
 
   useEffect(() => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     setSelectedOptionIndex(null);
     setStatus('idle');
     setShakeOption(null);
     setAttempts(0);
     setShowHint(false);
+
+    return () => {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    };
   }, [data.question]);
 
   const handleOptionClick = (index, isCorrect) => {
@@ -29,11 +35,14 @@ const QuizSlide = ({ data, onNext }) => {
       setStatus('wrong');
       setShakeOption(index);
       if (navigator.vibrate) navigator.vibrate(200);
-      setTimeout(() => {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+      const timer = setTimeout(() => {
         setStatus('idle');
         setSelectedOptionIndex(null);
         setShakeOption(null);
+        resetTimerRef.current = null;
       }, 800);
+      resetTimerRef.current = timer;
       if (attempts >= 1) setShowHint(true);
     }
   };

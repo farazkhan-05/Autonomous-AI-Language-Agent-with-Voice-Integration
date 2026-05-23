@@ -229,6 +229,7 @@ User input: "{user_input}"
 
 
 def guardrails_node(state: TutorState) -> dict:
+    user_log = f"[User: {state.get('user_id', 'Unknown')}]"
     last_msg_raw = extract_text_content(state["messages"][-1].content)
     
     # Clean string: strip, lowercase, remove punctuation, normalize whitespace
@@ -240,7 +241,7 @@ def guardrails_node(state: TutorState) -> dict:
     # 1. Fast local pre-check Bypasses
     # A. Exact Multi-Word Greeting Match
     if last_msg_lower in _MULTI_WORD_GREETINGS:
-        logger.info("⚡ [Guardrails] Passed fast local conversational pre-check (multi-word greeting).")
+        logger.info(f"⚡ [Guardrails] Passed fast local conversational pre-check (multi-word greeting). {user_log}")
         return {
             "guardrail_blocked": False,
             "guardrail_reason": "Conversational pre-check",
@@ -250,7 +251,7 @@ def guardrails_node(state: TutorState) -> dict:
     # B. Single-Word Greeting Token Match
     words = [w.strip() for w in last_msg_lower.split() if w.strip()]
     if words and all(w in _SINGLE_WORD_GREETINGS for w in words):
-        logger.info("⚡ [Guardrails] Passed fast local conversational pre-check (single-word tokens).")
+        logger.info(f"⚡ [Guardrails] Passed fast local conversational pre-check (single-word tokens). {user_log}")
         return {
             "guardrail_blocked": False,
             "guardrail_reason": "Conversational pre-check",
@@ -265,7 +266,7 @@ def guardrails_node(state: TutorState) -> dict:
         "eyes hurt", "eyes are hurting", "too bright", "too dark", "screen is bright"
     ]
     if any(kw in last_msg_lower for kw in _THEME_KEYWORDS):
-        logger.info("⚡ [Guardrails] Passed fast local pre-check (theme toggle control).")
+        logger.info(f"⚡ [Guardrails] Passed fast local pre-check (theme toggle control). {user_log}")
         return {
             "guardrail_blocked": False,
             "guardrail_reason": "Theme toggle bypass",
@@ -279,7 +280,7 @@ def guardrails_node(state: TutorState) -> dict:
         "ingles", "english", "verb", "vocabulary", "lesson", "conjugate", "pronunciation"
     ]
     if any(ind in last_msg_lower for ind in _SAFE_INDICATORS):
-        logger.info("⚡ [Guardrails] Passed fast local pre-check (safe Spanish/translation query).")
+        logger.info(f"⚡ [Guardrails] Passed fast local pre-check (safe Spanish/translation query). {user_log}")
         return {
             "guardrail_blocked": False,
             "guardrail_reason": "Safe query bypass",
@@ -293,7 +294,7 @@ def guardrails_node(state: TutorState) -> dict:
         reason = "Keyword safety filter block"
         if "python" in last_msg_lower:
             reason = "Python coding help request blocked by keyword safety filter"
-        logger.warning(f"🚨 [Guardrails] BLOCKED user input locally via keyword filter: '{last_msg_raw}'")
+        logger.warning(f"🚨 [Guardrails] BLOCKED user input locally via keyword filter: '{last_msg_raw}' {user_log}")
         return {
             "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
             "guardrail_blocked": True,
@@ -302,7 +303,7 @@ def guardrails_node(state: TutorState) -> dict:
         }
 
     # 3. Default to passing to the Tutor node (latency-optimized bypass)
-    logger.info("✅ [Guardrails] Bypassing LLM classification node to save latency. Passing directly to Tutor.")
+    logger.info(f"✅ [Guardrails] Bypassing LLM classification node to save latency. Passing directly to Tutor. {user_log}")
     return {
         "guardrail_blocked": False,
         "guardrail_reason": "Latency-optimized bypass",
@@ -358,6 +359,7 @@ If they're further along, you can introduce slightly more advanced concepts, but
 
 def prepare_tutor_messages(state: TutorState, db: Session) -> List[BaseMessage]:
     """Prepares and structures the complete message context for the AI Tutor node, running semantic RAG slides lookup."""
+    user_log = f"[User: {state.get('user_id', 'Unknown')}]"
     user_name = state.get("user_name", "Amigo")
     completed_count = state.get("completed_lessons_count", 0)
     
@@ -396,14 +398,14 @@ def prepare_tutor_messages(state: TutorState, db: Session) -> List[BaseMessage]:
                     
             if relevant_chunks:
                 context_str = "\n---\n".join(relevant_chunks)
-                logger.info(f"🧠 [RAG System] Retrieved {len(relevant_chunks)} matching context reference slides!")
+                logger.info(f"🧠 [RAG System] Retrieved {len(relevant_chunks)} matching context reference slides! {user_log}")
         except Exception as e:
-            logger.error(f"⚠️ [RAG System] Context slide retrieval failed: {e}")
+            logger.error(f"⚠️ [RAG System] Context slide retrieval failed: {e} {user_log}")
             if "429" in str(e) or "quota" in str(e).lower() or "resource_exhausted" in str(e).lower():
                 _embedding_blocked_until = time.time() + 300.0
-                logger.warning("⏰ [RAG System] Embedding API quota hit. Bypassing embedding calls for 5 minutes.")
+                logger.warning(f"⏰ [RAG System] Embedding API quota hit. Bypassing embedding calls for 5 minutes. {user_log}")
     else:
-        logger.info("⚡ [RAG System] Bypassing embedding call (rate limit cooldown active).")
+        logger.info(f"⚡ [RAG System] Bypassing embedding call (rate limit cooldown active). {user_log}")
 
     # Append reference context to system instruction if found
     tutor_prompt = _TUTOR_SYSTEM_PROMPT.format(
@@ -487,9 +489,10 @@ async def astream_with_fallback(messages: list, db: Session, bind_toggle_theme: 
 # ============================================================================
 
 def save_memory_node(state: TutorState, db: Optional[Session] = None) -> dict:
+    user_log = f"[User: {state.get('user_id', 'Unknown')}]"
     db = db or state.get("db")
     if db is None:
-        logger.error("save_memory_node called without database session")
+        logger.error(f"save_memory_node called without database session {user_log}")
         return {}
     try:
         user_id = state["user_id"]
@@ -524,7 +527,7 @@ def save_memory_node(state: TutorState, db: Optional[Session] = None) -> dict:
 
         db.commit()
     except Exception as e:
-        logger.error(f"⚠️ Failed to save chat memory: {e}")
+        logger.error(f"⚠️ Failed to save chat memory: {e} {user_log}")
         db.rollback()
 
     return {}

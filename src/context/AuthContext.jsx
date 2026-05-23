@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { auth, googleProvider } from "../firebase"; // Importing from your existing firebase.js
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 
@@ -18,21 +18,28 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // 2. Login Function
-  const login = async () => {
+  const login = useCallback(async () => {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       console.error("Login failed:", error);
     }
-  };
+  }, []);
 
   // 3. Logout Function
-  const logout = () => {
+  const logout = useCallback(() => {
     signOut(auth);
-  };
+  }, []);
+
+  const value = useMemo(() => ({
+    user,
+    login,
+    logout,
+    loading
+  }), [user, login, logout, loading]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={value}>
       {!loading && children}
     </AuthContext.Provider>
   );

@@ -50,3 +50,38 @@ parse_lessons.js
 lessons_data.json
 src/chatt.txt
 PROJECT_CONTEXT.md
+
+# Deployment/tooling
+.vercel/
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Test/build reports
+coverage/
+playwright-report/
+test-results/
+.nyc_output/
+*.tsbuildinfo
+
+# Python packaging
+build/
+*.egg-info/
+.eggs/
+*.whl
+*.pyo
+.hypothesis/
+
+# Secret/key files
+*.pem
+*.key
+*.crt
+service-account*.json
+firebase-adminsdk*.json
+google-application-credentials*.json
+credentials*.json
+
+# Allow safe env templates
+!.env.example
+!**/.env.example

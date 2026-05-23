@@ -1,20 +1,21 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect, useMemo } from 'react';
 import { useAuth } from './AuthContext'; // Import the User Brain
 
 const ProgressContext = createContext();
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
+const normalizeLessonIds = (ids) => {
+  if (!Array.isArray(ids)) return [];
+  const normalized = ids
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  return [...new Set(normalized)].sort((a, b) => a - b);
+};
+
 export const ProgressProvider = ({ children }) => {
   const { user } = useAuth(); // Check who is logged in
   const [completedLessons, setCompletedLessons] = useState([]);
-  const normalizeLessonIds = (ids) => {
-    if (!Array.isArray(ids)) return [];
-    const normalized = ids
-      .map((id) => Number(id))
-      .filter((id) => Number.isInteger(id) && id > 0);
-    return [...new Set(normalized)].sort((a, b) => a - b);
-  };
 
   // 1. SYNC LOGIC (Runs when you login/logout)
   useEffect(() => {
@@ -84,7 +85,7 @@ export const ProgressProvider = ({ children }) => {
   }, [user]); // Run when login status changes
 
   // 2. SAVE LOGIC (Runs when you finish a lesson)
-  const markLessonComplete = async (id) => {
+  const markLessonComplete = useCallback(async (id) => {
     const normalizedId = Number(id);
     if (!Number.isInteger(normalizedId) || normalizedId <= 0) return;
 
@@ -116,11 +117,15 @@ export const ProgressProvider = ({ children }) => {
         }
       }
     }
-  };
+  }, [completedLessons, user]);
 
+  const value = useMemo(() => ({
+    completedLessons,
+    markLessonComplete
+  }), [completedLessons, markLessonComplete]);
 
   return (
-    <ProgressContext.Provider value={{ completedLessons, markLessonComplete }}>
+    <ProgressContext.Provider value={value}>
       {children}
     </ProgressContext.Provider>
   );
