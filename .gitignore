@@ -54,6 +54,7 @@ lessons_data.json
 firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
+spanish_amigo_api/deploy/cloudrun.rendered.yaml
 
 # Test/build reports
 coverage/

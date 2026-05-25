@@ -56,6 +56,21 @@ class TestApiHealth(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.headers.get("X-Request-ID"), req_id)
 
+    def test_unhandled_exception_returns_500_with_request_id(self):
+        route_path = "/__test_error_route__"
+
+        @app.get(route_path)
+        def _raise_route():
+            raise RuntimeError("test failure")
+
+        try:
+            res = self.client.get(route_path, headers={"X-Request-ID": "rid-500"})
+            self.assertEqual(res.status_code, 500)
+            self.assertEqual(res.json().get("detail"), "Internal server error")
+            self.assertEqual(res.headers.get("X-Request-ID"), "rid-500")
+        finally:
+            app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != route_path]
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str
     FIREBASE_PROJECT_ID: str = "spanishamigo-8016a"
     AUTH_ALLOW_INSECURE_DEV_TOKENS: bool = False
+    LOG_LEVEL: str = "INFO"
     
     # Model Configuration
     GEMINI_PRIMARY_MODEL: str = "gemini-3.1-flash-lite"

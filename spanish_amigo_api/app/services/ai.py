@@ -30,8 +30,6 @@ def toggle_theme() -> str:
     return "Theme toggled successfully."
 
 
-# Configure structured logger for standard production log aggregation
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("spanish-amigo-ai")
 
 

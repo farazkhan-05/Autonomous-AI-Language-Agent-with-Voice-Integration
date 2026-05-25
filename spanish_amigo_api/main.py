@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
+from app.logging_setup import configure_logging
 from app.routers import chat, progress
 from app.services.health import check_database_health
 
 settings = get_settings()
+configure_logging()
 logger = logging.getLogger("spanish-amigo-api")
 
 app = FastAPI(
@@ -37,7 +39,23 @@ app.include_router(chat.router)
 async def add_request_logging(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     start = time.perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        logger.exception(
+            "request_id=%s method=%s path=%s status=%s latency_ms=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            500,
+            elapsed_ms,
+        )
+        response = JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"},
+        )
+
     elapsed_ms = int((time.perf_counter() - start) * 1000)
 
     response.headers["X-Request-ID"] = request_id
