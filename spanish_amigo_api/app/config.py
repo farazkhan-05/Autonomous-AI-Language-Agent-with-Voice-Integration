@@ -1,5 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from typing import List, cast
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """
@@ -13,11 +15,16 @@ class Settings(BaseSettings):
     # Secrets (FastAPI will validate that these are loaded as strings)
     DATABASE_URL: str
     GEMINI_API_KEY: str
+    FIREBASE_PROJECT_ID: str = "spanishamigo-8016a"
+    AUTH_ALLOW_INSECURE_DEV_TOKENS: bool = False
     
     # Model Configuration
     GEMINI_PRIMARY_MODEL: str = "gemini-3.1-flash-lite"
     GEMINI_BACKUP_MODEL: str = "gemma-4-31b"
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-2"
+
+    # CORS / frontend integration
+    ALLOWED_CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
 
     
@@ -28,8 +35,14 @@ class Settings(BaseSettings):
         extra="ignore"  # If there are extra variables in .env, ignore them
     )
 
+    @property
+    def cors_origins(self) -> List[str]:
+        origins = [origin.strip() for origin in self.ALLOWED_CORS_ORIGINS.split(",") if origin.strip()]
+        return list(dict.fromkeys(origins))
+
 # lru_cache makes sure we only read the .env file ONCE.
 # Whenever we call get_settings(), it returns the already loaded keys instantly from memory!
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # Required env vars are supplied at runtime from .env / deployment secrets.
+    return cast(Settings, Settings())

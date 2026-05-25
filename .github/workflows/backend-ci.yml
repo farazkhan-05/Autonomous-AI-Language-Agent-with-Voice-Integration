@@ -1,0 +1,46 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "spanish_amigo_api/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "spanish_amigo_api/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spanish_amigo_api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run unit tests
+        run: uv run python -m unittest discover -s tests -p "test_*.py"
+        env:
+          DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/test
+          GEMINI_API_KEY: test-key
+
+      - name: Run mypy
+        run: uv run --with mypy mypy app/config.py app/services/auth.py app/services/health.py main.py --config-file mypy.ini

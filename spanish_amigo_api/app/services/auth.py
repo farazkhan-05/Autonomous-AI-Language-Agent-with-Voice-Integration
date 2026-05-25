@@ -1,89 +1,80 @@
 import base64
 import json
 import logging
+from typing import Any, Optional, cast
+
 import firebase_admin
-from firebase_admin import auth
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from firebase_admin import auth
+
 from app.config import get_settings
 
 logger = logging.getLogger("spanish-amigo-ai")
+settings = get_settings()
 
-# Initialize Firebase Admin App with the project ID to verify tokens cryptographically
+# Initialize Firebase Admin app once for token verification.
 if not firebase_admin._apps:
-    firebase_admin.initialize_app(options={
-        'projectId': 'spanishamigo-8016a'
-    })
+    firebase_admin.initialize_app(options={"projectId": settings.FIREBASE_PROJECT_ID})
 
 security = HTTPBearer()
 
-def decode_unverified_token(token: str) -> dict:
+
+def decode_unverified_token(token: str) -> Optional[dict[str, Any]]:
     """
-    Decodes the payload of a JWT token without verifying its signature.
-    Only used in local development to prevent blocking the developer on expired/stale tokens.
+    Decode JWT payload without verifying signature.
+    Used only for explicit local-development fallback.
     """
     try:
-        parts = token.split('.')
-        if len(parts) == 3:
-            payload_b64 = parts[1]
-            # Add base64 padding
-            rem = len(payload_b64) % 4
-            if rem > 0:
-                payload_b64 += '=' * (4 - rem)
-            payload_json = base64.urlsafe_b64decode(payload_b64).decode('utf-8')
-            return json.loads(payload_json)
-    except Exception as e:
-        logger.warning(f"Failed to decode unverified token: {e}")
-    return None
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload_b64 = parts[1]
+        padding = len(payload_b64) % 4
+        if padding:
+            payload_b64 += "=" * (4 - padding)
+        payload_json = base64.urlsafe_b64decode(payload_b64).decode("utf-8")
+        return cast(dict[str, Any], json.loads(payload_json))
+    except Exception as exc:
+        logger.warning("Failed to decode unverified token: %s", exc)
+        return None
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+
+def _http_401(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict[str, Any]:
     """
-    FastAPI security dependency to verify the Firebase ID token in the Authorization header.
-    Returns the decoded token containing user identity details (e.g. 'uid', 'name', 'email').
-    Raises a 401 Unauthorized exception if the token is missing, expired, or invalid.
+    Verify Firebase ID token and return decoded identity claims.
 
-    In development mode (ENV=development), we skip the slow Firebase cryptographic
-    cert-fetch entirely and decode the JWT payload locally in <1ms. This prevents
-    the 12-second stall caused by external Google API latency on local machines.
+    In non-production environments, token signature verification can be bypassed only
+    when AUTH_ALLOW_INSECURE_DEV_TOKENS is explicitly enabled.
     """
     token = credentials.credentials
-    settings = get_settings()
 
-    # ── FAST PATH: development-only local decode (0ms, no network) ────────────
-    if settings.ENV == "development":
+    # Local fallback path is opt-in and never active in production.
+    if settings.ENV != "production" and settings.AUTH_ALLOW_INSECURE_DEV_TOKENS:
         decoded = decode_unverified_token(token)
         if decoded:
-            # Firebase stores uid under 'user_id', fallback to JWT 'sub'
-            if "uid" not in decoded:
-                decoded["uid"] = decoded.get("user_id") or decoded.get("sub", "")
+            decoded.setdefault("uid", decoded.get("user_id") or decoded.get("sub", ""))
             if decoded.get("uid"):
-                logger.debug("[Auth] Dev mode: instant local JWT decode (<1ms), uid=%s", decoded["uid"])
+                logger.debug("Auth dev fallback decode used for uid=%s", decoded["uid"])
                 return decoded
-        # If local decode fails, fall through to full verification below
-        logger.warning("[Auth] Dev mode: local JWT decode failed, attempting full Firebase verification.")
+        logger.warning("Auth dev fallback decode failed; attempting full Firebase verification.")
 
-    # ── PRODUCTION PATH: cryptographic verification against Google certs ──────
     try:
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token
-    except auth.ExpiredIdTokenError as e:
-        logger.warning(f"[Auth] Token expired: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed. Please sign in again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except auth.InvalidIdTokenError as e:
-        logger.warning(f"[Auth] Token invalid: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed. Please sign in again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except Exception as e:
-        logger.error(f"[Auth] Unexpected verification error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed. Please try again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return cast(dict[str, Any], auth.verify_id_token(token))
+    except auth.ExpiredIdTokenError:
+        logger.warning("Auth token expired")
+        raise _http_401("Authentication failed. Please sign in again.")
+    except auth.InvalidIdTokenError:
+        logger.warning("Auth token invalid")
+        raise _http_401("Authentication failed. Please sign in again.")
+    except Exception as exc:
+        logger.error("Auth verification error: %s", exc, exc_info=True)
+        raise _http_401("Authentication failed. Please try again.")
