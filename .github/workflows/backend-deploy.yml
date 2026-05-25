@@ -29,17 +29,10 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Authenticate to Google Cloud (Workload Identity)
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
-
-      - name: Authenticate to Google Cloud (Service Account Key JSON)
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER == '' && secrets.GCP_CREDENTIALS_JSON != '' }}
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v3
