@@ -19,7 +19,6 @@ env:
   SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE }}
   REPOSITORY: ${{ secrets.ARTIFACT_REPOSITORY }}
   IMAGE_NAME: spanish-amigo-api
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   deploy:
@@ -28,6 +27,56 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Validate deploy configuration
+        env:
+          WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          require_value() {
+            if [ -z "${!1:-}" ]; then
+              echo "::error::$1 is missing or empty"
+              missing=1
+            fi
+          }
+
+          require_value PROJECT_ID
+          require_value REGION
+          require_value SERVICE_NAME
+          require_value REPOSITORY
+          require_value WIF_PROVIDER
+          require_value DEPLOY_SERVICE_ACCOUNT
+          require_value DATABASE_URL
+          require_value GEMINI_API_KEY
+          require_value FIREBASE_PROJECT_ID
+
+          if ! [[ "$PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
+            echo "::error::GCP_PROJECT_ID must be a valid Google Cloud project ID"
+            missing=1
+          fi
+
+          if ! [[ "$REGION" =~ ^[a-z]+-[a-z]+[0-9]$ ]]; then
+            echo "::error::GCP_REGION should look like us-central1"
+            missing=1
+          fi
+
+          if ! [[ "$WIF_PROVIDER" =~ ^projects/[0-9]+/locations/global/workloadIdentityPools/.+/providers/.+$ ]]; then
+            echo "::error::GCP_WORKLOAD_IDENTITY_PROVIDER must be the full provider resource path"
+            missing=1
+          fi
+
+          if ! [[ "$DEPLOY_SERVICE_ACCOUNT" =~ ^[^@]+@[^@]+\.iam\.gserviceaccount\.com$ ]]; then
+            echo "::error::GCP_SERVICE_ACCOUNT_EMAIL must be a service account email"
+            missing=1
+          fi
+
+          exit "$missing"
 
       - name: Authenticate to Google Cloud (Workload Identity)
         uses: google-github-actions/auth@v3
@@ -54,12 +103,12 @@ jobs:
           echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
 
       - name: Setup Python for migrations
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: false
 
@@ -76,7 +125,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "${{ env.SERVICE_NAME }}" \
-            --image "${{ env.IMAGE_URI }}" \
+            --image "$IMAGE_URI" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --allow-unauthenticated \
