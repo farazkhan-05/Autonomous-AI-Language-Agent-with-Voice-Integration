@@ -10,7 +10,7 @@ settings = get_settings()
 # pool_pre_ping=True: Checks if the connection is still alive before sending queries,
 # preventing random disconnect errors from serverless databases like Neon.
 engine = create_engine(
-    settings.DATABASE_URL,
+    settings.sqlalchemy_database_url,
     pool_pre_ping=True,
     pool_recycle=300, # Recycles old connections every 5 minutes to keep things fresh
 )

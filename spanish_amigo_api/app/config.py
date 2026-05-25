@@ -41,6 +41,14 @@ class Settings(BaseSettings):
         origins = [origin.strip() for origin in self.ALLOWED_CORS_ORIGINS.split(",") if origin.strip()]
         return list(dict.fromkeys(origins))
 
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        if self.DATABASE_URL.startswith("postgres://"):
+            return self.DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+        if self.DATABASE_URL.startswith("postgresql://"):
+            return self.DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+        return self.DATABASE_URL
+
 # lru_cache makes sure we only read the .env file ONCE.
 # Whenever we call get_settings(), it returns the already loaded keys instantly from memory!
 @lru_cache
