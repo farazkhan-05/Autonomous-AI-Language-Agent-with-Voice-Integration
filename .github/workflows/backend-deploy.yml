@@ -35,6 +35,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          ALLOWED_CORS_ORIGINS: ${{ secrets.ALLOWED_CORS_ORIGINS }}
         run: |
           set -euo pipefail
 
@@ -55,6 +56,7 @@ jobs:
           require_value DATABASE_URL
           require_value GEMINI_API_KEY
           require_value FIREBASE_PROJECT_ID
+          require_value ALLOWED_CORS_ORIGINS
 
           if ! [[ "$PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
             echo "::error::GCP_PROJECT_ID must be a valid Google Cloud project ID"
@@ -74,6 +76,10 @@ jobs:
           if ! [[ "$DEPLOY_SERVICE_ACCOUNT" =~ ^[^@]+@[^@]+\.iam\.gserviceaccount\.com$ ]]; then
             echo "::error::GCP_SERVICE_ACCOUNT_EMAIL must be a service account email"
             missing=1
+          fi
+
+          if [[ "$ALLOWED_CORS_ORIGINS" != *","* ]]; then
+            echo "::warning::ALLOWED_CORS_ORIGINS contains a single origin. Add both localhost and frontend production URL if needed."
           fi
 
           exit "$missing"
@@ -130,7 +136,7 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --port 8000 \
-            --set-env-vars "ENV=production,LOG_LEVEL=INFO,FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
+            --set-env-vars "^##^ENV=production##LOG_LEVEL=INFO##FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}##ALLOWED_CORS_ORIGINS=${{ secrets.ALLOWED_CORS_ORIGINS }}" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest"
 
       - name: Verify Cloud Run health endpoint
