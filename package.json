@@ -15,7 +15,7 @@
     "@google/generative-ai": "^0.24.1",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
-    "firebase": "^12.9.0",
+    "firebase": "^12.13.0",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",
     "react-confetti": "^6.4.0",
