@@ -9,7 +9,7 @@ from sqlalchemy import select
 from typing import List
 
 from app.database import get_db
-from app.models import ChatMessage, CompletedLesson, ChatSession, User
+from app.models import ChatMessage, CompletedLesson, ChatSession, SystemStatus, User
 from app.schemas import ChatRequest, ChatResponse, ExplainRequest, ExplainResponse, SessionResponse, SessionUpdate
 from app.services.ai import tutor_graph, generate_explanation, extract_text_content, generate_chat_title, astream_with_fallback
 from app.services.auth import get_current_user
@@ -21,6 +21,41 @@ router = APIRouter(
     prefix="/chat",
     tags=["Chat"]
 )
+
+ANONYMOUS_GLOBAL_CHAT_MESSAGE_LIMIT = 3
+
+
+def _is_anonymous_firebase_user(current_user: dict) -> bool:
+    firebase_claims = current_user.get("firebase") or {}
+    return firebase_claims.get("sign_in_provider") == "anonymous"
+
+
+def _anonymous_chat_usage_key(user_id: str) -> str:
+    return f"anonymous_chat_usage:{user_id}"
+
+
+def _consume_anonymous_global_chat_message(db: Session, user_id: str, current_user: dict) -> None:
+    if not _is_anonymous_firebase_user(current_user):
+        return
+
+    usage_key = _anonymous_chat_usage_key(user_id)
+    usage_row = db.get(SystemStatus, usage_key)
+    message_count = int(usage_row.value) if usage_row else 0
+
+    if message_count >= ANONYMOUS_GLOBAL_CHAT_MESSAGE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ANONYMOUS_CHAT_LIMIT_REACHED",
+                "message": "Anonymous chat limit reached. Sign in with Google to keep chatting with Lumi.",
+            },
+        )
+
+    if usage_row:
+        usage_row.value = str(message_count + 1)
+    else:
+        db.add(SystemStatus(key=usage_key, value="1"))
+    db.commit()
 
 # 1. Fetch previous chat history for a specific session
 @router.get("/history/session/{session_id}", response_model=List[dict])
@@ -114,6 +149,8 @@ def send_chat_message(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Cannot send messages on behalf of another user."
         )
+
+    _consume_anonymous_global_chat_message(db, verified_user_id, current_user)
 
     # Check if the user exists in our database, auto-create them if not
     user = db.get(User, verified_user_id)
@@ -236,6 +273,8 @@ def send_chat_message_stream(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Cannot send messages on behalf of another user."
         )
+
+    _consume_anonymous_global_chat_message(db, verified_user_id, current_user)
 
     # Check if the user exists in our database, auto-create them if not
     user = db.get(User, verified_user_id)

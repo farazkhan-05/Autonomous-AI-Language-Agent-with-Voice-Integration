@@ -5,6 +5,7 @@ import { Lock, Star, CheckCircle, Zap, Trophy, Flame, Sparkles, MapPin, Rocket }
 
 // Data & Context
 import { courseData } from '../data/curriculum';
+import { useAuth } from '../context/AuthContext';
 import { useProgress } from '../context/ProgressContext';
 
 // Bright, happy color palette for lesson cards
@@ -12,6 +13,7 @@ const cardColors = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A78BFA', '#F97316'];
 
 const CourseMap = () => {
   const navigate = useNavigate();
+  const { isAnonymous, openSignInPrompt } = useAuth();
   const { completedLessons } = useProgress();
   const [hoveredNode, setHoveredNode] = useState(null);
 
@@ -24,6 +26,15 @@ const CourseMap = () => {
     const prevLessonId = index > 0 ? courseData[index - 1].id : null;
     if (index === 0 || completedLessons.includes(prevLessonId)) return 'active';
     return 'locked';
+  };
+
+  const handleLessonClick = (lesson, isLocked) => {
+    if (isLocked) return;
+    if (isAnonymous && lesson.id > 1) {
+      openSignInPrompt('save-progress');
+      return;
+    }
+    navigate(`/lesson/${lesson.id}`);
   };
 
   return (
@@ -178,7 +189,7 @@ const CourseMap = () => {
           return (
             <Box
               key={lesson.id}
-              onClick={() => !isLocked && navigate(`/lesson/${lesson.id}`)}
+              onClick={() => handleLessonClick(lesson, isLocked)}
               onMouseEnter={() => setHoveredNode(lesson.id)}
               onMouseLeave={() => setHoveredNode(null)}
               sx={{

@@ -26,7 +26,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const spanishVoicesRef = useRef([]);
 
   // Fetch real-time context
-  const { user } = useAuth();
+  const { user, openSignInPrompt } = useAuth();
   const { completedLessons } = useProgress();
 
   // Text-to-Speech (TTS)
@@ -261,6 +261,18 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
           session_id: activeSessionId
         }
       });
+
+      if (response.status === 403) {
+        openSignInPrompt('chat-limit');
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'model',
+            text: "You've used your 3 free Lumi chat messages. Sign in with Google to keep chatting and save your progress."
+          }
+        ]);
+        return;
+      }
 
       if (!response.ok) throw new Error("Backend chat service error");
 

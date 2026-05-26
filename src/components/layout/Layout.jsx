@@ -3,11 +3,12 @@ import { AppBar, Toolbar, Typography, Container, Box, IconButton, Button, Avatar
 import { Link, useLocation } from 'react-router-dom';
 import { BookOpen, Moon, Sun, LogOut, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import SignInPromptModal from '../auth/SignInPromptModal';
 import GlobalChatbot from '../chat/GlobalChatbot';
 
 const Layout = ({ children, darkMode, onToggleDarkMode }) => {
   const location = useLocation();
-  const { user, login, logout } = useAuth();
+  const { user, isAnonymous, login, logout } = useAuth();
   const [anchorEl, setAnchorEl] = useState(null);
 
   // Menu Handlers
@@ -119,7 +120,7 @@ const Layout = ({ children, darkMode, onToggleDarkMode }) => {
               </IconButton>
 
               {/* Auth Section */}
-              {user ? (
+              {user && !isAnonymous ? (
                 <>
                   <IconButton 
                     onClick={handleMenu} 
@@ -280,6 +281,7 @@ const Layout = ({ children, darkMode, onToggleDarkMode }) => {
 
       {/* Global AI Chatbot */}
       <GlobalChatbot darkMode={darkMode} onToggleTheme={onToggleDarkMode} />
+      <SignInPromptModal />
     </Box>
   );
 };
