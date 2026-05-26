@@ -130,14 +130,25 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
+          ENV_VARS_FILE="$(mktemp)"
+          cat > "${ENV_VARS_FILE}" <<EOF
+          ENV: "production"
+          LOG_LEVEL: "INFO"
+          FIREBASE_PROJECT_ID: "${{ secrets.FIREBASE_PROJECT_ID }}"
+          ALLOWED_CORS_ORIGINS: "${{ secrets.ALLOWED_CORS_ORIGINS }}"
+          AUTH_ALLOW_INSECURE_DEV_TOKENS: "false"
+          EOF
+
           gcloud run deploy "${{ env.SERVICE_NAME }}" \
             --image "$IMAGE_URI" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --allow-unauthenticated \
             --port 8000 \
-            --set-env-vars "^##^ENV=production##LOG_LEVEL=INFO##FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}##ALLOWED_CORS_ORIGINS=${{ secrets.ALLOWED_CORS_ORIGINS }}##AUTH_ALLOW_INSECURE_DEV_TOKENS=false" \
+            --env-vars-file "${ENV_VARS_FILE}" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest"
+
+          rm -f "${ENV_VARS_FILE}"
 
       - name: Verify Cloud Run health endpoint
         run: |
