@@ -15,7 +15,7 @@ const promptCopy = {
 };
 
 const SignInPromptModal = () => {
-  const { signInPrompt, closeSignInPrompt, login } = useAuth();
+  const { signInPrompt, authError, isLoggingIn, closeSignInPrompt, login } = useAuth();
   const copy = promptCopy[signInPrompt] || promptCopy['save-progress'];
 
   const handleLogin = async () => {
@@ -62,10 +62,24 @@ const SignInPromptModal = () => {
         <Typography sx={{ color: '#1A1A1A', fontWeight: 700, lineHeight: 1.55 }}>
           {copy.message}
         </Typography>
+        {authError && (
+          <Typography
+            sx={{
+              mt: 1.5,
+              color: '#B42318',
+              fontWeight: 800,
+              lineHeight: 1.4,
+              fontSize: '0.9rem',
+            }}
+          >
+            {authError}
+          </Typography>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
         <Button
           onClick={closeSignInPrompt}
+          disabled={isLoggingIn}
           sx={{
             color: '#1A1A1A',
             fontWeight: 800,
@@ -77,6 +91,7 @@ const SignInPromptModal = () => {
         <Button
           variant="contained"
           onClick={handleLogin}
+          disabled={isLoggingIn}
           startIcon={<User size={16} />}
           sx={{
             background: '#FF6B6B',
@@ -91,7 +106,7 @@ const SignInPromptModal = () => {
             },
           }}
         >
-          Sign in with Google
+          {isLoggingIn ? 'Signing in...' : 'Sign in with Google'}
         </Button>
       </DialogActions>
     </Dialog>

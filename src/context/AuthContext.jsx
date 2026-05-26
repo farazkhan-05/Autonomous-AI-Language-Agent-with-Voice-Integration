@@ -4,10 +4,29 @@ import { linkWithPopup, onAuthStateChanged, signInAnonymously, signInWithPopup, 
 
 const AuthContext = createContext();
 
+const LINK_FALLBACK_ERROR_CODES = new Set([
+  "auth/credential-already-in-use",
+  "auth/email-already-in-use",
+  "auth/account-exists-with-different-credential",
+  "auth/provider-already-linked",
+]);
+
+const AUTH_ERROR_MESSAGES = {
+  "auth/popup-closed-by-user": "Sign-in was closed before completion. Please try again.",
+  "auth/popup-blocked": "Your browser blocked the sign-in popup. Please allow popups and try again.",
+  "auth/cancelled-popup-request": "A sign-in popup was already in progress. Please try again.",
+  "auth/unauthorized-domain": "This website domain is not authorized in Firebase Auth yet.",
+  "auth/operation-not-allowed": "Google sign-in is not enabled in Firebase Authentication settings.",
+};
+
+const getAuthErrorMessage = (error) => AUTH_ERROR_MESSAGES[error?.code] || "Sign-in failed. Please try again.";
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [signInPrompt, setSignInPrompt] = useState(null);
+  const [authError, setAuthError] = useState(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 1. Check if user is already logged in when app starts
   useEffect(() => {
@@ -31,12 +50,16 @@ export const AuthProvider = ({ children }) => {
 
   // 2. Login Function
   const login = useCallback(async () => {
+    if (isLoggingIn) return;
+    setAuthError(null);
+    setIsLoggingIn(true);
+
     try {
       if (auth.currentUser?.isAnonymous) {
         try {
           await linkWithPopup(auth.currentUser, googleProvider);
         } catch (linkError) {
-          if (linkError.code !== "auth/credential-already-in-use") {
+          if (!LINK_FALLBACK_ERROR_CODES.has(linkError.code)) {
             throw linkError;
           }
           await signInWithPopup(auth, googleProvider);
@@ -47,8 +70,14 @@ export const AuthProvider = ({ children }) => {
       setSignInPrompt(null);
     } catch (error) {
       console.error("Login failed:", error);
+      setAuthError(getAuthErrorMessage(error));
+      if (!signInPrompt) {
+        setSignInPrompt("save-progress");
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
-  }, []);
+  }, [isLoggingIn, signInPrompt]);
 
   // 3. Logout Function
   const logout = useCallback(() => {
@@ -56,10 +85,12 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const openSignInPrompt = useCallback((reason = "save-progress") => {
+    setAuthError(null);
     setSignInPrompt(reason);
   }, []);
 
   const closeSignInPrompt = useCallback(() => {
+    setAuthError(null);
     setSignInPrompt(null);
   }, []);
 
@@ -70,9 +101,11 @@ export const AuthProvider = ({ children }) => {
     logout,
     loading,
     signInPrompt,
+    authError,
+    isLoggingIn,
     openSignInPrompt,
     closeSignInPrompt
-  }), [user, login, logout, loading, signInPrompt, openSignInPrompt, closeSignInPrompt]);
+  }), [user, login, logout, loading, signInPrompt, authError, isLoggingIn, openSignInPrompt, closeSignInPrompt]);
 
   return (
     <AuthContext.Provider value={value}>
