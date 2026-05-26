@@ -26,7 +26,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const spanishVoicesRef = useRef([]);
 
   // Fetch real-time context
-  const { user, openSignInPrompt } = useAuth();
+  const { user, isAnonymous, openSignInPrompt } = useAuth();
   const { completedLessons } = useProgress();
 
   // Text-to-Speech (TTS)
@@ -251,26 +251,61 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
     try {
       const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
-      const response = await authFetch('/chat/send_stream', {
+      const requestPayload = {
+        user_id: user.uid,
+        message: userMessage,
+        user_name: userName,
+        session_id: activeSessionId
+      };
+
+      let response = await authFetch('/chat/send_stream', {
         method: 'POST',
         user,
-        body: {
-          user_id: user.uid,
-          message: userMessage,
-          user_name: userName,
-          session_id: activeSessionId
-        }
+        body: requestPayload
       });
 
+      // If sign-in just completed, retry once with a forced fresh token.
+      if (response.status === 403 && !isAnonymous) {
+        response = await authFetch('/chat/send_stream', {
+          method: 'POST',
+          user,
+          body: requestPayload,
+          forceRefreshToken: true
+        });
+      }
+
       if (response.status === 403) {
-        openSignInPrompt('chat-limit');
-        setMessages(prev => [
-          ...prev,
-          {
-            role: 'model',
-            text: "You've used your 3 free Lumi chat messages. Sign in with Google to keep chatting and save your progress."
+        let backendMessage = "";
+        try {
+          const payload = await response.json();
+          const detail = payload?.detail;
+          if (typeof detail === 'string') {
+            backendMessage = detail;
+          } else if (detail?.message) {
+            backendMessage = detail.message;
           }
-        ]);
+        } catch {
+          backendMessage = "";
+        }
+
+        if (isAnonymous) {
+          openSignInPrompt('chat-limit');
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'model',
+              text: "You've used your 3 free Lumi chat messages. Sign in with Google to keep chatting and save your progress."
+            }
+          ]);
+        } else {
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'model',
+              text: backendMessage || "Your sign-in just finished. Please try one more message now."
+            }
+          ]);
+        }
         return;
       }
 

@@ -5,11 +5,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000
  * If a Firebase user is provided, the ID token is attached automatically.
  */
 export async function authFetch(path, options = {}) {
-  const { user, headers, body, ...rest } = options;
+  const { user, headers, body, forceRefreshToken = false, ...rest } = options;
   const requestHeaders = new Headers(headers || {});
 
   if (user) {
-    const token = await user.getIdToken();
+    const token = await user.getIdToken(forceRefreshToken);
     requestHeaders.set('Authorization', `Bearer ${token}`);
   }
 

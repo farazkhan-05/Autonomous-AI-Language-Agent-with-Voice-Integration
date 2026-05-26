@@ -67,6 +67,7 @@ export const AuthProvider = ({ children }) => {
       } else {
         await signInWithPopup(auth, googleProvider);
       }
+      await auth.currentUser?.getIdToken(true);
       setSignInPrompt(null);
     } catch (error) {
       console.error("Login failed:", error);
