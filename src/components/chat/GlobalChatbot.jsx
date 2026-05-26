@@ -24,6 +24,8 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   
   const messagesEndRef = useRef(null);
   const spanishVoicesRef = useRef([]);
+  const previousUidRef = useRef(null);
+  const previousIsAnonymousRef = useRef(null);
 
   // Fetch real-time context
   const { user, isAnonymous, openSignInPrompt } = useAuth();
@@ -172,6 +174,20 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     setIsDrawerOpen(false);
   };
 
+  const resetChatForCurrentUser = (reason = "identity-switch") => {
+    setSessions([]);
+    setActiveSessionId(null);
+    setMessages([]);
+    setIsLoading(false);
+    setIsHistoryLoading(false);
+    setIsDrawerOpen(false);
+    setEditingSessionId(null);
+    setEditingTitle('');
+    if (reason === "identity-switch" || reason === "auth-upgrade") {
+      handleStartNewChat();
+    }
+  };
+
   // Delete a session
   const handleDeleteSession = async (sessionId, e) => {
     e.stopPropagation();
@@ -234,6 +250,33 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     }
   }, [isOpen, user]);
 
+  // Treat auth identity changes as a hard chat-session boundary.
+  useEffect(() => {
+    const currentUid = user?.uid || null;
+    const previousUid = previousUidRef.current;
+
+    if (previousUid && currentUid && previousUid !== currentUid) {
+      resetChatForCurrentUser("identity-switch");
+      if (isOpen) {
+        fetchSessions();
+      }
+    }
+
+    previousUidRef.current = currentUid;
+  }, [user, isOpen]);
+
+  // Also reset when guest account is upgraded to a permanent account.
+  useEffect(() => {
+    const previousIsAnonymous = previousIsAnonymousRef.current;
+    if (previousIsAnonymous === true && isAnonymous === false) {
+      resetChatForCurrentUser("auth-upgrade");
+      if (isOpen) {
+        fetchSessions();
+      }
+    }
+    previousIsAnonymousRef.current = isAnonymous;
+  }, [isAnonymous, isOpen, user]);
+
   const handleSelectSession = (sessionId) => {
     setActiveSessionId(sessionId);
     loadSessionHistory(sessionId);
@@ -258,24 +301,27 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
         session_id: activeSessionId
       };
 
-      let response = await authFetch('/chat/send_stream', {
+      const sendRequest = async ({ bodyOverride = {}, forceRefreshToken = false } = {}) => authFetch('/chat/send_stream', {
         method: 'POST',
         user,
-        body: requestPayload
+        forceRefreshToken,
+        body: {
+          ...requestPayload,
+          ...bodyOverride
+        }
       });
+      let response = await sendRequest();
 
       // If sign-in just completed, retry once with a forced fresh token.
       if (response.status === 403 && !isAnonymous) {
-        response = await authFetch('/chat/send_stream', {
-          method: 'POST',
-          user,
-          body: requestPayload,
+        response = await sendRequest({
           forceRefreshToken: true
         });
       }
 
       if (response.status === 403) {
         let backendMessage = "";
+        let detailCode = "";
         try {
           const payload = await response.json();
           const detail = payload?.detail;
@@ -283,30 +329,55 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
             backendMessage = detail;
           } else if (detail?.message) {
             backendMessage = detail.message;
+            detailCode = detail.code || "";
           }
         } catch {
           backendMessage = "";
         }
 
-        if (isAnonymous) {
-          openSignInPrompt('chat-limit');
-          setMessages(prev => [
-            ...prev,
-            {
-              role: 'model',
-              text: "You've used your 3 free Lumi chat messages. Sign in with Google to keep chatting and save your progress."
-            }
-          ]);
-        } else {
-          setMessages(prev => [
-            ...prev,
-            {
-              role: 'model',
-              text: backendMessage || "Your sign-in just finished. Please try one more message now."
-            }
-          ]);
+        const isInvalidSession = backendMessage.includes("Invalid session ID") || detailCode === "SESSION_OWNERSHIP_MISMATCH";
+        if (!isAnonymous && isInvalidSession) {
+          setActiveSessionId(null);
+          const recoveredResponse = await sendRequest({
+            bodyOverride: { session_id: null },
+            forceRefreshToken: true
+          });
+          if (recoveredResponse.ok) {
+            response = recoveredResponse;
+          } else {
+            backendMessage = "Your previous session belonged to a different account. Started a new conversation. Please send your message again.";
+            setMessages(prev => [
+              ...prev,
+              {
+                role: 'model',
+                text: backendMessage
+              }
+            ]);
+            return;
+          }
         }
-        return;
+
+        if (response.status === 403) {
+          if (isAnonymous) {
+            openSignInPrompt('chat-limit');
+            setMessages(prev => [
+              ...prev,
+              {
+                role: 'model',
+                text: "You've used your 3 free Lumi chat messages. Sign in with Google to keep chatting and save your progress."
+              }
+            ]);
+          } else {
+            setMessages(prev => [
+              ...prev,
+              {
+                role: 'model',
+                text: backendMessage || "Your sign-in just finished. Please try one more message now."
+              }
+            ]);
+          }
+          return;
+        }
       }
 
       if (!response.ok) throw new Error("Backend chat service error");
