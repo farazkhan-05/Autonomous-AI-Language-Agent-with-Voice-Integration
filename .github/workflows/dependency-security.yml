@@ -1,0 +1,81 @@
+name: Dependency Security
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "spanish_amigo_api/pyproject.toml"
+      - "spanish_amigo_api/uv.lock"
+      - ".github/workflows/dependency-security.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "spanish_amigo_api/pyproject.toml"
+      - "spanish_amigo_api/uv.lock"
+      - ".github/workflows/dependency-security.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency review (block high and critical)
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  backend-pip-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spanish_amigo_api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run pip-audit
+        run: uv run --with pip-audit pip-audit --desc
+
+  frontend-npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run npm audit (high and critical)
+        run: npm audit --omit=dev --audit-level=high
