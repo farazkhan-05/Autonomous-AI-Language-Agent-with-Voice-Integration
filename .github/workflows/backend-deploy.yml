@@ -136,7 +136,7 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --port 8000 \
-            --set-env-vars "^##^ENV=production##LOG_LEVEL=INFO##FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}##ALLOWED_CORS_ORIGINS=${{ secrets.ALLOWED_CORS_ORIGINS }}" \
+            --set-env-vars "^##^ENV=production##LOG_LEVEL=INFO##FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}##ALLOWED_CORS_ORIGINS=${{ secrets.ALLOWED_CORS_ORIGINS }}##AUTH_ALLOW_INSECURE_DEV_TOKENS=false" \
             --set-secrets "DATABASE_URL=DATABASE_URL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest"
 
       - name: Verify Cloud Run health endpoint
