@@ -4,8 +4,7 @@ import { Bot, X, Send, User, Mic, Volume2, VolumeX, Menu, Plus, Trash2, Edit3, C
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
 import { useProgress } from '../../context/ProgressContext';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+import { authFetch } from '../../api/authFetch';
 
 const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -123,11 +122,8 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const fetchSessions = async () => {
     if (!user) return [];
     try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await authFetch('/chat/sessions', {
+        user
       });
       if (!response.ok) throw new Error("Failed to load sessions");
       const data = await response.json();
@@ -145,11 +141,8 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     setMessages([]); // Instant wipe to prevent previous conversation leak
     setIsLoading(false); // Stop any active typing loader
     try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/chat/history/session/${sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await authFetch(`/chat/history/session/${sessionId}`, {
+        user
       });
       if (!response.ok) throw new Error("Failed to load session history");
       const history = await response.json();
@@ -185,12 +178,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     if (!window.confirm("Are you sure you want to delete this conversation?")) return;
     
     try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}`, {
+      const response = await authFetch(`/chat/sessions/${sessionId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        user
       });
       if (!response.ok) throw new Error("Failed to delete session");
       
@@ -216,14 +206,10 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     e.stopPropagation();
     if (!newTitle.trim()) return;
     try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}`, {
+      const response = await authFetch(`/chat/sessions/${sessionId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ title: newTitle })
+        user,
+        body: { title: newTitle }
       });
       if (!response.ok) throw new Error("Failed to rename session");
       
@@ -265,19 +251,15 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
     try {
       const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/chat/send_stream`, {
+      const response = await authFetch('/chat/send_stream', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+        user,
+        body: {
           user_id: user.uid,
           message: userMessage,
           user_name: userName,
           session_id: activeSessionId
-        })
+        }
       });
 
       if (!response.ok) throw new Error("Backend chat service error");

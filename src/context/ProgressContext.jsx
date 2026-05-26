@@ -1,9 +1,8 @@
 import React, { createContext, useCallback, useContext, useState, useEffect, useMemo } from 'react';
 import { useAuth } from './AuthContext'; // Import the User Brain
+import { authFetch } from '../api/authFetch';
 
 const ProgressContext = createContext();
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const normalizeLessonIds = (ids) => {
   if (!Array.isArray(ids)) return [];
@@ -27,14 +26,9 @@ export const ProgressProvider = ({ children }) => {
       if (user) {
         // --- SCENARIO A: USER IS LOGGED IN ---
         try {
-          // Fetch token from Firebase auth context
-          const token = await user.getIdToken();
-          
           // Fetch progress from our new FastAPI + Postgres database with token
-          const response = await fetch(`${API_BASE_URL}/progress/${user.uid}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
+          const response = await authFetch(`/progress/${user.uid}`, {
+            user
           });
           if (!response.ok) throw new Error("Backend connection failed");
           
@@ -46,25 +40,18 @@ export const ProgressProvider = ({ children }) => {
           if (unsavedLessons.length > 0) {
             await Promise.all(
               unsavedLessons.map(async (lessonId) => {
-                const uploadToken = await user.getIdToken();
-                return fetch(`${API_BASE_URL}/progress/complete`, {
+                return authFetch('/progress/complete', {
                   method: 'POST',
-                  headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${uploadToken}`
-                  },
-                  body: JSON.stringify({ user_id: user.uid, lesson_id: String(lessonId) })
+                  user,
+                  body: { user_id: user.uid, lesson_id: String(lessonId) }
                 });
               })
             );
           }
 
           // Read-after-write: server remains the source of truth.
-          const refreshToken = await user.getIdToken();
-          const refreshResponse = await fetch(`${API_BASE_URL}/progress/${user.uid}`, {
-            headers: {
-              'Authorization': `Bearer ${refreshToken}`
-            }
+          const refreshResponse = await authFetch(`/progress/${user.uid}`, {
+            user
           });
           if (!refreshResponse.ok) throw new Error("Backend refresh failed");
 
@@ -99,17 +86,13 @@ export const ProgressProvider = ({ children }) => {
       if (user) {
         // --- SAVE TO POSTGRES DB ---
         try {
-          const token = await user.getIdToken();
-          const response = await fetch(`${API_BASE_URL}/progress/complete`, {
+          const response = await authFetch('/progress/complete', {
             method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
+            user,
+            body: {
               user_id: user.uid,
               lesson_id: String(normalizedId)
-            })
+            }
           });
           if (!response.ok) throw new Error("Failed to save progress to server");
         } catch (error) {
