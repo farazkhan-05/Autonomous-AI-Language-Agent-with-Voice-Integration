@@ -7,9 +7,21 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Runtime/package-manager caches
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.uv-cache/
+
 node_modules
 dist
 dist-ssr
+.vite/
+.turbo/
+.parcel-cache/
 *.local
 
 # Editor directories and files
@@ -17,12 +29,19 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 .env.local
+.envrc
+.direnv/
+.npmrc.local
+.pypirc
+.netrc
 
 # Python backend
 **/.env
@@ -34,11 +53,15 @@ dist-ssr
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.pyre/
+.pytype/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 .tox/
 .nox/
+pip-wheel-metadata/
 *.sqlite
 *.sqlite3
 *.db
@@ -55,6 +78,19 @@ firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
 spanish_amigo_api/deploy/cloudrun.rendered.yaml
+spanish_amigo_api/deploy/monitoring/*.rendered.json
+
+# Cloud/infra local state
+.gcloud/
+application_default_credentials.json
+adc.json
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
 
 # Test/build reports
 coverage/
@@ -75,10 +111,26 @@ build/
 *.pem
 *.key
 *.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kubeconfig
+kubeconfig*
+id_rsa*
+id_ed25519*
+*.age
 service-account*.json
 firebase-adminsdk*.json
 google-application-credentials*.json
 credentials*.json
+
+# Database exports/backups
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.psql
 
 # Allow safe env templates
 !.env.example
