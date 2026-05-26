@@ -1,0 +1,332 @@
+import os
+import sys
+import tempfile
+import unittest
+from typing import Any
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage, HumanMessage
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import sessionmaker
+
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://test:test@localhost:5432/test")
+os.environ.setdefault("GEMINI_API_KEY", "test-key")
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.database import get_db
+from app.models import ChatMessage, ChatSession, CompletedLesson, SystemStatus, User
+from app.services.ai import save_memory_node
+from app.services.auth import get_current_user
+from main import app
+
+
+CURRENT_TEST_USER: dict[str, Any] = {
+    "uid": "user-a",
+    "email": "user-a@example.com",
+    "firebase": {"sign_in_provider": "google.com"},
+}
+
+
+def _override_current_user() -> dict[str, Any]:
+    return CURRENT_TEST_USER
+
+
+class TestBackendIntegrationFlows(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = os.path.join(cls.temp_dir.name, "integration.sqlite3")
+        cls.engine = create_engine(
+            f"sqlite:///{cls.db_path}",
+            connect_args={"check_same_thread": False},
+        )
+        cls.TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=cls.engine)
+
+        # Create only tables needed by these tests.
+        User.__table__.create(bind=cls.engine, checkfirst=True)
+        CompletedLesson.__table__.create(bind=cls.engine, checkfirst=True)
+        ChatSession.__table__.create(bind=cls.engine, checkfirst=True)
+        ChatMessage.__table__.create(bind=cls.engine, checkfirst=True)
+        SystemStatus.__table__.create(bind=cls.engine, checkfirst=True)
+
+        def _override_db():
+            db = cls.TestSessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = _override_db
+        app.dependency_overrides[get_current_user] = _override_current_user
+        cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.clear()
+        cls.engine.dispose()
+        cls.temp_dir.cleanup()
+
+    def setUp(self):
+        self._set_current_user("user-a", provider="google.com", email="user-a@example.com")
+        self._reset_db()
+
+    def _set_current_user(self, uid: str, provider: str = "google.com", email: str | None = None) -> None:
+        CURRENT_TEST_USER.clear()
+        CURRENT_TEST_USER.update(
+            {
+                "uid": uid,
+                "email": email or f"{uid}@example.com",
+                "firebase": {"sign_in_provider": provider},
+            }
+        )
+
+    def _reset_db(self) -> None:
+        db = self.TestSessionLocal()
+        try:
+            db.execute(delete(ChatMessage))
+            db.execute(delete(ChatSession))
+            db.execute(delete(CompletedLesson))
+            db.execute(delete(SystemStatus))
+            db.execute(delete(User))
+            db.commit()
+        finally:
+            db.close()
+
+    def _seed_user(self, user_id: str, email: str | None = None) -> None:
+        db = self.TestSessionLocal()
+        try:
+            db.add(User(id=user_id, email=email or f"{user_id}@example.com"))
+            db.commit()
+        finally:
+            db.close()
+
+    def _seed_progress(self, user_id: str, lesson_id: str) -> None:
+        db = self.TestSessionLocal()
+        try:
+            if not db.get(User, user_id):
+                db.add(User(id=user_id, email=f"{user_id}@example.com"))
+                db.commit()
+            db.add(CompletedLesson(user_id=user_id, lesson_id=lesson_id))
+            db.commit()
+        finally:
+            db.close()
+
+    def _seed_session_with_messages(self, user_id: str, title: str = "Chat") -> int:
+        db = self.TestSessionLocal()
+        try:
+            if not db.get(User, user_id):
+                db.add(User(id=user_id, email=f"{user_id}@example.com"))
+                db.commit()
+
+            session = ChatSession(user_id=user_id, title=title)
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+
+            db.add(ChatMessage(user_id=user_id, session_id=session.id, role="user", content="hola"))
+            db.add(ChatMessage(user_id=user_id, session_id=session.id, role="assistant", content="¡hola!"))
+            db.commit()
+            return session.id
+        finally:
+            db.close()
+
+    @staticmethod
+    def _fake_tutor_invoke(state_input: dict[str, Any]) -> dict[str, Any]:
+        reply_text = "Lumi test reply"
+        memory_state = {
+            **state_input,
+            "messages": [*state_input["messages"], AIMessage(content=reply_text)],
+        }
+        save_memory_node(memory_state, state_input["db"])
+        return {"messages": [AIMessage(content=reply_text)]}
+
+    def test_tenancy_user_a_cannot_read_user_b_progress(self):
+        self._seed_progress("user-b", "lesson-1")
+        self._set_current_user("user-a")
+
+        response = self.client.get("/progress/user-b")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Cannot view another user's progress", response.json()["detail"])
+
+    def test_tenancy_user_a_cannot_access_user_b_chat_history(self):
+        session_id = self._seed_session_with_messages("user-b")
+        self._set_current_user("user-a")
+
+        by_session = self.client.get(f"/chat/history/session/{session_id}")
+        by_user = self.client.get("/chat/history/user-b")
+
+        self.assertEqual(by_session.status_code, 403)
+        self.assertIn("Cannot access another user's chat history", by_session.json()["detail"])
+        self.assertEqual(by_user.status_code, 403)
+        self.assertIn("Cannot access another user's chat history", by_user.json()["detail"])
+
+    def test_tenancy_user_a_cannot_rename_or_delete_user_b_session(self):
+        session_id = self._seed_session_with_messages("user-b")
+        self._set_current_user("user-a")
+
+        rename_response = self.client.put(
+            f"/chat/sessions/{session_id}",
+            json={"title": "Hacked title"},
+        )
+        delete_response = self.client.delete(f"/chat/sessions/{session_id}")
+
+        self.assertEqual(rename_response.status_code, 403)
+        self.assertIn("Cannot modify another user's session", rename_response.json()["detail"])
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertIn("Cannot delete another user's session", delete_response.json()["detail"])
+
+    @patch("app.routers.chat.update_session_title_in_background", return_value=None)
+    @patch("app.routers.chat.tutor_graph.invoke")
+    def test_session_lifecycle_create_fetch_rename_delete(self, mock_invoke, _mock_bg_title):
+        mock_invoke.side_effect = self._fake_tutor_invoke
+        self._set_current_user("user-a")
+
+        create_response = self.client.post(
+            "/chat/send",
+            json={
+                "user_id": "user-a",
+                "message": "Hola Lumi",
+                "user_name": "Amigo",
+                "session_id": None,
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        created_session_id = create_response.json()["session_id"]
+        self.assertIsInstance(created_session_id, int)
+
+        history_response = self.client.get(f"/chat/history/session/{created_session_id}")
+        self.assertEqual(history_response.status_code, 200)
+        history = history_response.json()
+        self.assertGreaterEqual(len(history), 2)
+        self.assertEqual(history[0]["role"], "user")
+        self.assertEqual(history[1]["role"], "model")
+
+        rename_response = self.client.put(
+            f"/chat/sessions/{created_session_id}",
+            json={"title": "Renamed session"},
+        )
+        self.assertEqual(rename_response.status_code, 200)
+        self.assertEqual(rename_response.json()["title"], "Renamed session")
+
+        delete_response = self.client.delete(f"/chat/sessions/{created_session_id}")
+        self.assertEqual(delete_response.status_code, 200)
+
+        sessions_response = self.client.get("/chat/sessions")
+        self.assertEqual(sessions_response.status_code, 200)
+        remaining_ids = {session["id"] for session in sessions_response.json()}
+        self.assertNotIn(created_session_id, remaining_ids)
+
+    @patch("app.routers.chat.generate_explanation", return_value="Short explanation")
+    def test_explain_endpoint_valid_request_returns_200(self, _mock_explain):
+        response = self.client.post(
+            "/chat/explain",
+            json={
+                "spanish_sentence": "Tengo hambre",
+                "english_translation": "I am hungry",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["explanation"], "Short explanation")
+
+    def test_explain_endpoint_invalid_payload_returns_422(self):
+        response = self.client.post(
+            "/chat/explain",
+            json={"spanish_sentence": "Tengo hambre"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    @patch("app.routers.chat.generate_explanation", side_effect=Exception("model down"))
+    def test_explain_endpoint_error_path_returns_controlled_500(self, _mock_explain):
+        response = self.client.post(
+            "/chat/explain",
+            json={
+                "spanish_sentence": "Tengo hambre",
+                "english_translation": "I am hungry",
+            },
+        )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json()["detail"],
+            "Unable to generate explanation right now. Please try again.",
+        )
+
+    @patch("app.routers.chat.update_session_title_in_background", return_value=None)
+    @patch("app.services.ai.save_memory_node", return_value={})
+    @patch("app.services.ai.prepare_tutor_messages", return_value=[HumanMessage(content="hola")])
+    @patch("app.services.ai.guardrails_node", return_value={"guardrail_blocked": False})
+    @patch("app.routers.chat.astream_with_fallback")
+    def test_stream_endpoint_returns_chunks_and_done(
+        self,
+        mock_astream,
+        _mock_guardrails,
+        _mock_prepare,
+        _mock_save_memory,
+        _mock_bg_title,
+    ):
+        async def _fake_stream(*_args, **_kwargs):
+            class Chunk:
+                def __init__(self, content):
+                    self.content = content
+                    self.tool_calls = []
+
+            yield Chunk("Hola")
+            yield Chunk(" amigo")
+
+        mock_astream.side_effect = _fake_stream
+
+        response = self.client.post(
+            "/chat/send_stream",
+            json={
+                "user_id": "user-a",
+                "message": "Hola",
+                "user_name": "Amigo",
+                "session_id": None,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("session_id", body)
+        self.assertIn('"token": "Hola"', body)
+        self.assertIn('"token": " amigo"', body)
+        self.assertIn("[DONE]", body)
+
+    @patch("app.routers.chat.update_session_title_in_background", return_value=None)
+    @patch("app.services.ai.save_memory_node", return_value={})
+    @patch("app.services.ai.prepare_tutor_messages", return_value=[HumanMessage(content="hola")])
+    @patch("app.services.ai.guardrails_node", return_value={"guardrail_blocked": False})
+    @patch("app.routers.chat.astream_with_fallback")
+    def test_stream_endpoint_model_error_returns_graceful_fallback_token(
+        self,
+        mock_astream,
+        _mock_guardrails,
+        _mock_prepare,
+        _mock_save_memory,
+        _mock_bg_title,
+    ):
+        async def _boom_stream(*_args, **_kwargs):
+            if False:
+                yield None
+            raise RuntimeError("stream failed")
+
+        mock_astream.side_effect = _boom_stream
+
+        response = self.client.post(
+            "/chat/send_stream",
+            json={
+                "user_id": "user-a",
+                "message": "Hola",
+                "user_name": "Amigo",
+                "session_id": None,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("unexpected error during response generation", body)
+        self.assertIn("[DONE]", body)
+
+
+if __name__ == "__main__":
+    unittest.main()

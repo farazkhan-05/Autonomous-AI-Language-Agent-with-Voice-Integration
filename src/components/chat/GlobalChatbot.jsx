@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
 import { useProgress } from '../../context/ProgressContext';
 import { authFetch } from '../../api/authFetch';
+import { normalizeApiError, throwApiError } from '../../api/apiError';
 
 const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -127,7 +128,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       const response = await authFetch('/chat/sessions', {
         user
       });
-      if (!response.ok) throw new Error("Failed to load sessions");
+      await throwApiError(response, "Failed to load sessions");
       const data = await response.json();
       setSessions(data);
       return data;
@@ -146,7 +147,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       const response = await authFetch(`/chat/history/session/${sessionId}`, {
         user
       });
-      if (!response.ok) throw new Error("Failed to load session history");
+      await throwApiError(response, "Failed to load session history");
       const history = await response.json();
       setMessages(history);
     } catch (error) {
@@ -198,7 +199,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
         method: 'DELETE',
         user
       });
-      if (!response.ok) throw new Error("Failed to delete session");
+      await throwApiError(response, "Failed to delete session");
       
       const updated = sessions.filter(s => s.id !== sessionId);
       setSessions(updated);
@@ -227,7 +228,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
         user,
         body: { title: newTitle }
       });
-      if (!response.ok) throw new Error("Failed to rename session");
+      await throwApiError(response, "Failed to rename session");
       
       const updatedSession = await response.json();
       setSessions(prev => prev.map(s => s.id === sessionId ? updatedSession : s));
@@ -320,20 +321,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       }
 
       if (response.status === 403) {
-        let backendMessage = "";
-        let detailCode = "";
-        try {
-          const payload = await response.json();
-          const detail = payload?.detail;
-          if (typeof detail === 'string') {
-            backendMessage = detail;
-          } else if (detail?.message) {
-            backendMessage = detail.message;
-            detailCode = detail.code || "";
-          }
-        } catch {
-          backendMessage = "";
-        }
+        const apiError = await normalizeApiError(response, "Access denied. Please sign in again.");
+        let backendMessage = apiError.message;
+        const detailCode = apiError.code;
 
         const isInvalidSession = backendMessage.includes("Invalid session ID") || detailCode === "SESSION_OWNERSHIP_MISMATCH";
         if (!isAnonymous && isInvalidSession) {
@@ -380,7 +370,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
         }
       }
 
-      if (!response.ok) throw new Error("Backend chat service error");
+      await throwApiError(response, "Backend chat service error");
 
       // Set up response body reader for SSE processing
       const reader = response.body.getReader();

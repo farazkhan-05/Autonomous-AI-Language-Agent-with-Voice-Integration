@@ -1,6 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { auth, googleProvider } from "../firebase"; // Importing from your existing firebase.js
-import { linkWithPopup, onAuthStateChanged, signInAnonymously, signInWithPopup, signOut } from "firebase/auth";
+import {
+  linkWithPopup,
+  onAuthStateChanged,
+  signInAnonymously,
+  signInWithPopup,
+  signOut
+} from "firebase/auth";
 
 const AuthContext = createContext();
 
@@ -13,7 +19,7 @@ const LINK_FALLBACK_ERROR_CODES = new Set([
 
 const AUTH_ERROR_MESSAGES = {
   "auth/popup-closed-by-user": "Sign-in was closed before completion. Please try again.",
-  "auth/popup-blocked": "Your browser blocked the sign-in popup. Please allow popups and try again.",
+  "auth/popup-blocked": "Your browser blocked the sign-in popup. Please allow popups for this site, then try again.",
   "auth/cancelled-popup-request": "A sign-in popup was already in progress. Please try again.",
   "auth/unauthorized-domain": "This website domain is not authorized in Firebase Auth yet.",
   "auth/operation-not-allowed": "Google sign-in is not enabled in Firebase Authentication settings.",

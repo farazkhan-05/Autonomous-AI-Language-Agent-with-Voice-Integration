@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useState, useEffect, useMemo } from 'react';
 import { useAuth } from './AuthContext'; // Import the User Brain
 import { authFetch } from '../api/authFetch';
+import { throwApiError } from '../api/apiError';
 
 const ProgressContext = createContext();
 
@@ -30,7 +31,7 @@ export const ProgressProvider = ({ children }) => {
           const response = await authFetch(`/progress/${user.uid}`, {
             user
           });
-          if (!response.ok) throw new Error("Backend connection failed");
+          await throwApiError(response, "Backend connection failed");
           
           const dbProgressRaw = await response.json(); // Array of lesson IDs e.g. ["1", "2"]
           const dbProgress = normalizeLessonIds(dbProgressRaw);
@@ -44,7 +45,7 @@ export const ProgressProvider = ({ children }) => {
                   method: 'POST',
                   user,
                   body: { user_id: user.uid, lesson_id: String(lessonId) }
-                });
+                }).then((uploadResponse) => throwApiError(uploadResponse, "Backend progress upload failed"));
               })
             );
           }
@@ -53,7 +54,7 @@ export const ProgressProvider = ({ children }) => {
           const refreshResponse = await authFetch(`/progress/${user.uid}`, {
             user
           });
-          if (!refreshResponse.ok) throw new Error("Backend refresh failed");
+          await throwApiError(refreshResponse, "Backend refresh failed");
 
           const canonicalProgress = normalizeLessonIds(await refreshResponse.json());
           setCompletedLessons(canonicalProgress);
@@ -94,7 +95,7 @@ export const ProgressProvider = ({ children }) => {
               lesson_id: String(normalizedId)
             }
           });
-          if (!response.ok) throw new Error("Failed to save progress to server");
+          await throwApiError(response, "Failed to save progress to server");
         } catch (error) {
           console.warn("⚠️ [SpanishAmigo] Progress saved locally, but cloud sync failed:", error);
         }
