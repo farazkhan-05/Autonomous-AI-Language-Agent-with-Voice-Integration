@@ -107,11 +107,15 @@ Key areas:
 | Backend | FastAPI, Uvicorn |
 | AI Orchestration | LangGraph, LangChain |
 | LLM Provider | Google Gemini |
-| Database | Postgres, Neon-compatible |
+| Realtime Transport | Server-Sent Events (SSE) |
+| Database | Neon Postgres, Postgres-compatible databases |
 | Vector Search | pgvector |
 | ORM And Migrations | SQLAlchemy 2.0, Alembic |
+| Validation And Config | Pydantic, Pydantic Settings |
 | Package Management | npm, uv |
-| Deployment | Vercel frontend, Cloud Run backend |
+| Containerization | Docker |
+| Deployment | Vercel, Google Cloud Run, Artifact Registry |
+| Secrets And Monitoring | Google Secret Manager, Cloud Monitoring |
 | CI And Security | GitHub Actions, Dependabot, pip-audit, npm audit |
 
 ## Repository Layout
