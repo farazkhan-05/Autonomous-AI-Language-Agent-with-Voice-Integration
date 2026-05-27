@@ -98,6 +98,12 @@ playwright-report/
 test-results/
 .nyc_output/
 *.tsbuildinfo
+junit.xml
+test-results.xml
+
+# Extra local caches
+.cache/
+.eslintcache
 
 # Python packaging
 build/
@@ -106,6 +112,9 @@ build/
 *.whl
 *.pyo
 .hypothesis/
+__pypackages__/
+*.py[cod]
+*$py.class
 
 # Secret/key files
 *.pem
@@ -131,6 +140,19 @@ credentials*.json
 *.bak
 *.sql.gz
 *.psql
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Editor/local history and temporary merge files
+.history/
+*.tmp
+*.temp
+*.orig
+*.rej
 
 # Allow safe env templates
 !.env.example
