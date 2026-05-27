@@ -38,8 +38,7 @@
     "tailwindcss": "^4.1.18",
     "vite": "^7.2.4"
   },
-  "description": "This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.",
-  "main": "eslint.config.js",
+  "description": "SpanishAmigo is a React and FastAPI Spanish learning app with AI tutoring, progress sync, and streamed chat.",
   "keywords": [],
   "author": "",
   "license": "ISC"

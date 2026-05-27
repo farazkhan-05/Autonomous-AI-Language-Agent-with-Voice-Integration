@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { AppBar, Toolbar, Typography, Container, Box, IconButton, Button, Avatar, Menu, MenuItem } from '@mui/material';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { BookOpen, Moon, Sun, LogOut, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import SignInPromptModal from '../auth/SignInPromptModal';
 import GlobalChatbot from '../chat/GlobalChatbot';
 
 const Layout = ({ children, darkMode, onToggleDarkMode }) => {
-  const location = useLocation();
   const { user, isAnonymous, login, logout } = useAuth();
   const [anchorEl, setAnchorEl] = useState(null);
 
@@ -20,7 +19,6 @@ const Layout = ({ children, darkMode, onToggleDarkMode }) => {
   };
 
   const borderColor = darkMode ? '#555' : '#1A1A1A';
-  const bgColor = darkMode ? '#1A1A2E' : '#E0F7FA'; // Light: Sky blue tint
   const cardBg = darkMode ? '#252542' : '#FFFFFF';
   const textColor = darkMode ? '#FFFFFF' : '#1A1A1A';
 

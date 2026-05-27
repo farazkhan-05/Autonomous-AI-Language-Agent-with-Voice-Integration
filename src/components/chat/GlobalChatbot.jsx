@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, IconButton, TextField, Typography, Paper, CircularProgress, Fade } from '@mui/material';
 import { Bot, X, Send, User, Mic, Volume2, VolumeX, Menu, Plus, Trash2, Edit3, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -32,10 +32,10 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   // Fetch real-time context
   const { user, isAnonymous, openSignInPrompt } = useAuth();
 
-  const bindActiveSessionId = (sessionId) => {
+  const bindActiveSessionId = useCallback((sessionId) => {
     activeSessionIdRef.current = sessionId;
     setActiveSessionId(sessionId);
-  };
+  }, []);
 
   // Text-to-Speech (TTS)
   useEffect(() => {
@@ -127,7 +127,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   }, [messages, isOpen, isLoading]);
 
   // Fetch all user chat sessions
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
     if (!user) return [];
     try {
       const response = await authFetch('/chat/sessions', {
@@ -141,7 +141,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       console.error("Error fetching chat sessions:", error);
       return [];
     }
-  };
+  }, [user]);
 
   // Load history for a specific session
   const loadSessionHistory = async (sessionId) => {
@@ -167,7 +167,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   };
 
   // Create a brand new chat (reset state)
-  const handleStartNewChat = () => {
+  const handleStartNewChat = useCallback(() => {
     bindActiveSessionId(null);
     setIsLoading(false); // Reset active response spinner
     const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
@@ -178,9 +178,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       }
     ]);
     setIsDrawerOpen(false);
-  };
+  }, [bindActiveSessionId, user]);
 
-  const resetChatForCurrentUser = (reason = "identity-switch") => {
+  const resetChatForCurrentUser = useCallback((reason = "identity-switch") => {
     setSessions([]);
     bindActiveSessionId(null);
     setMessages([]);
@@ -192,7 +192,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     if (reason === "identity-switch" || reason === "auth-upgrade") {
       handleStartNewChat();
     }
-  };
+  }, [bindActiveSessionId, handleStartNewChat]);
 
   // Delete a session
   const handleDeleteSession = async (sessionId, e) => {
@@ -254,7 +254,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       // Quietly populate the drawer's session history in the background without blocking the UI
       fetchSessions();
     }
-  }, [isOpen, user]);
+  }, [activeSessionId, fetchSessions, handleStartNewChat, isOpen, user]);
 
   // Treat auth identity changes as a hard chat-session boundary.
   useEffect(() => {
@@ -269,7 +269,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
     }
 
     previousUidRef.current = currentUid;
-  }, [user, isOpen]);
+  }, [fetchSessions, isOpen, resetChatForCurrentUser, user]);
 
   // Also reset when guest account is upgraded to a permanent account.
   useEffect(() => {
@@ -281,7 +281,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       }
     }
     previousIsAnonymousRef.current = isAnonymous;
-  }, [isAnonymous, isOpen, user]);
+  }, [fetchSessions, isAnonymous, isOpen, resetChatForCurrentUser]);
 
   const handleSelectSession = (sessionId) => {
     bindActiveSessionId(sessionId);

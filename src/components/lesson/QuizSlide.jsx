@@ -11,17 +11,10 @@ const QuizSlide = ({ data, onNext }) => {
   const resetTimerRef = useRef(null);
 
   useEffect(() => {
-    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-    setSelectedOptionIndex(null);
-    setStatus('idle');
-    setShakeOption(null);
-    setAttempts(0);
-    setShowHint(false);
-
     return () => {
       if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     };
-  }, [data.question]);
+  }, []);
 
   const handleOptionClick = (index, isCorrect) => {
     if (status === 'correct') return;

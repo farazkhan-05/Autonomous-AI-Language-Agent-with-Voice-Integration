@@ -198,7 +198,7 @@ const CourseMap = () => {
                 gap: 1.5,
                 p: 1.5,
                 borderRadius: '12px',
-                background: isLocked ? (darkMode => '#e5e7eb') : color,
+                background: isLocked ? '#e5e7eb' : color,
                 border: `3px solid ${isLocked ? '#9CA3AF' : '#1A1A1A'}`,
                 boxShadow: isLocked ? 'none' : `4px 4px 0px #1A1A1A`,
                 cursor: isLocked ? 'not-allowed' : 'pointer',

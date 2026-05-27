@@ -68,7 +68,7 @@ const LessonPlayer = () => {
     switch (currentSlide.type) {
       case 'context': return <ContextSlide data={currentSlide} onNext={nextSlide} />;
       case 'reveal': return <RevealSlide data={currentSlide} onNext={nextSlide} />;
-      case 'practice': return <QuizSlide data={currentSlide} onNext={nextSlide} />;
+      case 'practice': return <QuizSlide key={`${currentSlide.type}:${currentSlide.question}`} data={currentSlide} onNext={nextSlide} />;
       default: return null;
     }
   };
