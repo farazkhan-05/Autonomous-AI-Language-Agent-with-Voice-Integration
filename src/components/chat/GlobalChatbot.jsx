@@ -3,7 +3,6 @@ import { Box, IconButton, TextField, Typography, Paper, CircularProgress, Fade }
 import { Bot, X, Send, User, Mic, Volume2, VolumeX, Menu, Plus, Trash2, Edit3, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../../context/AuthContext';
-import { useProgress } from '../../context/ProgressContext';
 import { authFetch } from '../../api/authFetch';
 import { normalizeApiError, throwApiError } from '../../api/apiError';
 
@@ -27,10 +26,16 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   const spanishVoicesRef = useRef([]);
   const previousUidRef = useRef(null);
   const previousIsAnonymousRef = useRef(null);
+  const activeSessionIdRef = useRef(null);
+  const isSendingRef = useRef(false);
 
   // Fetch real-time context
   const { user, isAnonymous, openSignInPrompt } = useAuth();
-  const { completedLessons } = useProgress();
+
+  const bindActiveSessionId = (sessionId) => {
+    activeSessionIdRef.current = sessionId;
+    setActiveSessionId(sessionId);
+  };
 
   // Text-to-Speech (TTS)
   useEffect(() => {
@@ -163,7 +168,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
   // Create a brand new chat (reset state)
   const handleStartNewChat = () => {
-    setActiveSessionId(null);
+    bindActiveSessionId(null);
     setIsLoading(false); // Reset active response spinner
     const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
     setMessages([
@@ -177,7 +182,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
   const resetChatForCurrentUser = (reason = "identity-switch") => {
     setSessions([]);
-    setActiveSessionId(null);
+    bindActiveSessionId(null);
     setMessages([]);
     setIsLoading(false);
     setIsHistoryLoading(false);
@@ -206,7 +211,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       
       if (activeSessionId === sessionId) {
         if (updated.length > 0) {
-          setActiveSessionId(updated[0].id);
+          bindActiveSessionId(updated[0].id);
           loadSessionHistory(updated[0].id);
         } else {
           handleStartNewChat();
@@ -279,19 +284,20 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
   }, [isAnonymous, isOpen, user]);
 
   const handleSelectSession = (sessionId) => {
-    setActiveSessionId(sessionId);
+    bindActiveSessionId(sessionId);
     loadSessionHistory(sessionId);
     setIsDrawerOpen(false);
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!inputText.trim() || isLoading) return;
+    if (!inputText.trim() || isLoading || isSendingRef.current) return;
 
     const userMessage = inputText.trim();
+    isSendingRef.current = true;
+    setIsLoading(true);
     setInputText('');
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
-    setIsLoading(true);
 
     try {
       const userName = user?.displayName || user?.email?.split('@')[0] || "Amigo";
@@ -299,7 +305,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
         user_id: user.uid,
         message: userMessage,
         user_name: userName,
-        session_id: activeSessionId
+        session_id: activeSessionIdRef.current
       };
 
       const sendRequest = async ({ bodyOverride = {}, forceRefreshToken = false } = {}) => authFetch('/chat/send_stream', {
@@ -327,7 +333,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
 
         const isInvalidSession = backendMessage.includes("Invalid session ID") || detailCode === "SESSION_OWNERSHIP_MISMATCH";
         if (!isAnonymous && isInvalidSession) {
-          setActiveSessionId(null);
+          bindActiveSessionId(null);
           const recoveredResponse = await sendRequest({
             bodyOverride: { session_id: null },
             forceRefreshToken: true
@@ -387,24 +393,30 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
           const chunkStr = decoder.decode(value, { stream: !done });
           buffer += chunkStr;
 
-          // Split buffer by newlines to resolve complete SSE data lines
-          const lines = buffer.split('\n');
-          // Save any incomplete line back to the buffer
-          buffer = lines.pop() || '';
+          const events = buffer.split(/\r?\n\r?\n/);
+          buffer = events.pop() || '';
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || !trimmed.startsWith('data: ')) continue;
-            
-            const dataStr = trimmed.slice(6); // remove 'data: ' prefix
-            if (dataStr === '[DONE]') continue;
-            
+          for (const event of events) {
+            const dataStr = event
+              .split(/\r?\n/)
+              .map(line => line.trim())
+              .filter(line => line.startsWith('data: '))
+              .map(line => line.slice(6))
+              .join('\n');
+
+            if (!dataStr) continue;
+            if (dataStr === '[DONE]') {
+              finished = true;
+              buffer = '';
+              break;
+            }
+
             try {
               const parsed = JSON.parse(dataStr);
               
               // 1. Dynamic Session ID Sync
-              if (parsed.session_id && parsed.session_id !== activeSessionId) {
-                setActiveSessionId(parsed.session_id);
+              if (parsed.session_id && parsed.session_id !== activeSessionIdRef.current) {
+                bindActiveSessionId(parsed.session_id);
                 fetchSessions();
               }
               
@@ -435,8 +447,9 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
                   });
                 }
               }
-            } catch (parsedErr) {
-              console.warn("Skipping partial or malformed chunk:", parsedErr, trimmed);
+            } catch {
+              buffer = `${event}\n\n${buffer}`;
+              break;
             }
           }
         }
@@ -447,6 +460,7 @@ const GlobalChatbot = ({ darkMode, onToggleTheme }) => {
       console.error("Chat sending error:", error);
       setMessages(prev => [...prev, { role: 'model', text: "Lo siento, I am having trouble reaching my server right now. 🔌" }]);
     } finally {
+      isSendingRef.current = false;
       setIsLoading(false);
     }
   };
