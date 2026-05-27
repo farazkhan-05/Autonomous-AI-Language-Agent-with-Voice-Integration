@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import List
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import ChatMessage, CompletedLesson, ChatSession, SystemStatus, User
 from app.schemas import ChatRequest, ChatResponse, ExplainRequest, ExplainResponse, SessionResponse, SessionUpdate
 from app.services.ai import tutor_graph, generate_explanation, extract_text_content, generate_chat_title, astream_with_fallback
@@ -23,6 +23,21 @@ router = APIRouter(
 )
 
 ANONYMOUS_GLOBAL_CHAT_MESSAGE_LIMIT = 3
+
+
+def _prepare_tutor_messages_with_fresh_db(state_input: dict):
+    from app.services.ai import prepare_tutor_messages
+
+    with SessionLocal() as background_db:
+        return prepare_tutor_messages(state_input, background_db)
+
+
+def _save_memory_with_fresh_db(state_input: dict) -> None:
+    from app.services.ai import save_memory_node
+
+    with SessionLocal() as background_db:
+        save_memory_node(state_input, db=background_db)
+        background_db.commit()
 
 
 def _is_anonymous_firebase_user(current_user: dict) -> bool:
@@ -117,20 +132,16 @@ def get_chat_history(user_id: str, db: Session = Depends(get_db), current_user: 
 # 2. Send a new message to the AI Spanish tutor
 def update_session_title_in_background(session_id: int, first_message: str):
     """Asynchronously generates an AI title and updates the ChatSession in the database."""
-    from app.database import SessionLocal
-    from app.models import ChatSession
-    db = SessionLocal()
     try:
-        title = generate_chat_title(first_message)
-        session = db.get(ChatSession, session_id)
-        if session:
-            session.title = title
-            db.commit()
-            logger.info(f"✨ [Background Task] Updated chat session {session_id} title to: '{title}'")
+        with SessionLocal() as db:
+            title = generate_chat_title(first_message)
+            session = db.get(ChatSession, session_id)
+            if session:
+                session.title = title
+                db.commit()
+                logger.info(f"✨ [Background Task] Updated chat session {session_id} title to: '{title}'")
     except Exception as e:
-        logger.error(f"⚠️ [Background Task] Failed to update chat session title: {e}")
-    finally:
-        db.close()
+        logger.error(f"⚠️ [Background Task] Failed to update chat session title: {e}", exc_info=True)
 
 
 @router.post("/send", response_model=ChatResponse)
@@ -352,11 +363,10 @@ def send_chat_message_stream(
         "user_email": current_email,
         "completed_lessons_count": completed_count,
         "session_id": active_session_id,
-        "db": db
     }
 
     async def sse_generator():
-        from app.services.ai import guardrails_node, prepare_tutor_messages, save_memory_node
+        from app.services.ai import guardrails_node
         try:
             # 1. Yield active session ID immediately so client can bind new conversations instantly
             yield f"data: {json.dumps({'session_id': active_session_id})}\n\n"
@@ -375,31 +385,32 @@ def send_chat_message_stream(
 
                 # Persist the safety exchange in a background thread (non-blocking)
                 state_input["messages"].append(AIMessage(content=reply_text))
-                await asyncio.to_thread(save_memory_node, state_input, db)
+                await asyncio.to_thread(_save_memory_with_fresh_db, state_input)
                 yield "data: [DONE]\n\n"
                 return
 
             # 3. Guardrails passed: run heavy RAG + DB lookup in a background thread
             #    asyncio.to_thread delegates the blocking work to a worker thread so
             #    the ASGI event loop stays completely free while embeddings are computed.
-            tutor_messages = await asyncio.to_thread(prepare_tutor_messages, state_input, db)
+            tutor_messages = await asyncio.to_thread(_prepare_tutor_messages_with_fresh_db, state_input)
 
             # 4. Stream response using async generator — zero event-loop blocking
             full_reply_text = ""
             action_required = None
 
-            async for chunk in astream_with_fallback(tutor_messages, db, bind_toggle_theme=True):
-                content = extract_text_content(chunk.content)
-                if content:
-                    full_reply_text += content
-                    yield f"data: {json.dumps({'token': content})}\n\n"
+            with SessionLocal() as stream_db:
+                async for chunk in astream_with_fallback(tutor_messages, stream_db, bind_toggle_theme=True):
+                    content = extract_text_content(chunk.content)
+                    if content:
+                        full_reply_text += content
+                        yield f"data: {json.dumps({'token': content})}\n\n"
 
-                # Detect theme-toggle tool calls
-                if hasattr(chunk, "tool_calls") and chunk.tool_calls:
-                    for tc in chunk.tool_calls:
-                        if tc.get("name") == "toggle_theme":
-                            action_required = "TOGGLE_THEME"
-                            break
+                    # Detect theme-toggle tool calls
+                    if hasattr(chunk, "tool_calls") and chunk.tool_calls:
+                        for tc in chunk.tool_calls:
+                            if tc.get("name") == "toggle_theme":
+                                action_required = "TOGGLE_THEME"
+                                break
 
             # Handle theme toggle overrides
             if action_required == "TOGGLE_THEME":
@@ -410,13 +421,19 @@ def send_chat_message_stream(
 
             # 5. Persist final chat response in a background thread (non-blocking)
             state_input["messages"].append(AIMessage(content=full_reply_text))
-            await asyncio.to_thread(save_memory_node, state_input, db)
+            await asyncio.to_thread(_save_memory_with_fresh_db, state_input)
 
             # 6. Signal stream completion
             yield "data: [DONE]\n\n"
 
         except Exception as stream_err:
-            logger.error(f"[SSE] Response generator error: {stream_err}", exc_info=True)
+            logger.error(
+                "[SSE] Response generator error for session_id=%s user_id=%s: %s",
+                active_session_id,
+                verified_user_id,
+                stream_err,
+                exc_info=True,
+            )
             yield f"data: {json.dumps({'token': '⚠️ Lo siento, I hit an unexpected error during response generation.'})}\n\n"
             yield "data: [DONE]\n\n"
 
