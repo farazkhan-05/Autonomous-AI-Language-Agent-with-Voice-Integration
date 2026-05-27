@@ -2,6 +2,8 @@
 
 SpanishAmigo is the product implementation of this system: a full-stack Spanish learning app with structured lessons, saved progress, and an AI tutor named Lumi. The frontend is built with React and Vite. The backend is a FastAPI service that verifies Firebase ID tokens, stores user progress and chat history in Postgres, and streams AI tutor responses over Server-Sent Events.
 
+**Live Demo:** [spanishamigo.vercel.app](https://spanishamigo.vercel.app/)
+
 The project is designed as a practical production-style portfolio app: small enough to understand, but complete enough to show real work across frontend, backend, authentication, persistence, AI integration, deployment, and operational hardening.
 
 ## Contents
