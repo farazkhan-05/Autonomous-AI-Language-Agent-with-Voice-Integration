@@ -1,5 +1,6 @@
 import time
 import logging
+import unicodedata
 from typing import Annotated, TypedDict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -191,6 +192,8 @@ _SINGLE_WORD_GREETINGS = {
     "hola", "hi", "hello", "thanks", "gracias", "ok", "yes", "no", "si", "perfecto", "lumi"
 }
 
+GUARDRAIL_CLASSIFICATION_CHAR_THRESHOLD = 100
+
 _OFF_TOPIC_REPLY = (
     "¡Hola! I'm Lumi, your Spanish tutor 🇪🇸 — I can only help with Spanish language learning. "
     "Try asking me something like *'How do I say \"I am hungry\" in Spanish?'* ¡Vamos! 😊"
@@ -201,6 +204,17 @@ _OFF_TOPIC_KEYWORDS = [
     "french", "arabic", "mandarin", "chinese", "german", "hindi", "japanese",
     "python code", "python script", "javascript", "write code", "programming", "algebra",
     "bitcoin", "crypto", "investment", "doctor", "medicine", "fever", "election"
+]
+
+_PROMPT_INJECTION_KEYWORDS = [
+    "ignore previous instructions", "ignore your instructions", "system prompt",
+    "developer message", "reveal your instructions", "jailbreak", "bypass guardrails",
+    "act as"
+]
+
+_TRANSLATION_QUERY_MARKERS = [
+    "como se dice", "how do you say", "translate", "how do i say",
+    "significa", "what does", "in spanish", "en espanol"
 ]
 
 _GUARDRAIL_CLASSIFIER_PROMPT = """
@@ -226,12 +240,53 @@ User input: "{user_input}"
 """.strip()
 
 
+def _guardrail_block(reason: str, category: str = "off_topic") -> dict:
+    return {
+        "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
+        "guardrail_blocked": True,
+        "guardrail_reason": reason,
+        "guardrail_category": category
+    }
+
+
+def _guardrail_pass(reason: str) -> dict:
+    return {
+        "guardrail_blocked": False,
+        "guardrail_reason": reason,
+        "guardrail_category": "spanish_learning"
+    }
+
+
+def _looks_like_translation_query(last_msg_lower: str) -> bool:
+    return any(marker in last_msg_lower for marker in _TRANSLATION_QUERY_MARKERS)
+
+
+def _classify_guardrail_input(last_msg_raw: str, user_log: str) -> dict:
+    classifier = get_model(model_manager.primary_model).with_structured_output(GuardrailClassification)
+    classification = classifier.invoke(
+        _GUARDRAIL_CLASSIFIER_PROMPT.format(user_input=last_msg_raw)
+    )
+
+    if classification.is_safe:
+        logger.info(
+            f"[Guardrails] LLM classification passed: {classification.reason} {user_log}"
+        )
+        return _guardrail_pass(classification.reason)
+
+    logger.warning(
+        f"[Guardrails] BLOCKED by LLM classification "
+        f"({classification.category}): {classification.reason} {user_log}"
+    )
+    return _guardrail_block(classification.reason, classification.category)
+
+
 def guardrails_node(state: TutorState) -> dict:
     user_log = f"[User: {state.get('user_id', 'Unknown')}]"
     last_msg_raw = extract_text_content(state["messages"][-1].content)
     
     # Clean string: strip, lowercase, remove punctuation, normalize whitespace
-    last_msg_lower = last_msg_raw.strip().lower()
+    last_msg_lower = unicodedata.normalize("NFKD", last_msg_raw.strip().lower())
+    last_msg_lower = last_msg_lower.encode("ascii", "ignore").decode("ascii")
     for char in ["?", "!", ",", ".", ";", ":"]:
         last_msg_lower = last_msg_lower.replace(char, "")
     last_msg_lower = " ".join(last_msg_lower.split())
@@ -271,42 +326,30 @@ def guardrails_node(state: TutorState) -> dict:
             "guardrail_category": "spanish_learning"
         }
 
-    # D. Safe Spanish / Translation queries pre-check Bypass
-    _SAFE_INDICATORS = [
-        "¿", "¡", "como se dice", "how do you say", "translate", "how do i say",
-        "significa", "what does", "grammar", "pronounce", "español", "spanish",
-        "ingles", "english", "verb", "vocabulary", "lesson", "conjugate", "pronunciation"
-    ]
-    if any(ind in last_msg_lower for ind in _SAFE_INDICATORS):
-        logger.info(f"⚡ [Guardrails] Passed fast local pre-check (safe Spanish/translation query). {user_log}")
-        return {
-            "guardrail_blocked": False,
-            "guardrail_reason": "Safe query bypass",
-            "guardrail_category": "spanish_learning"
-        }
-
-
+    # Longer inputs are classified before any broad safety pass, even if they
+    # include Spanish-learning words like "translate" or "Spanish".
+    if len(last_msg_raw.strip()) > GUARDRAIL_CLASSIFICATION_CHAR_THRESHOLD:
+        try:
+            return _classify_guardrail_input(last_msg_raw, user_log)
+        except Exception as e:
+            logger.error(f"[Guardrails] LLM classification failed: {e} {user_log}", exc_info=True)
+            return _guardrail_block("Guardrail classification failed", "abuse_or_jailbreak")
 
     # 2. Local Keyword safety filter
-    if any(kw in last_msg_lower for kw in _OFF_TOPIC_KEYWORDS):
+    if any(kw in last_msg_lower for kw in _PROMPT_INJECTION_KEYWORDS):
+        logger.warning(f"[Guardrails] BLOCKED local prompt injection pattern: '{last_msg_raw}' {user_log}")
+        return _guardrail_block("Prompt injection pattern blocked", "abuse_or_jailbreak")
+
+    if any(kw in last_msg_lower for kw in _OFF_TOPIC_KEYWORDS) and not _looks_like_translation_query(last_msg_lower):
         reason = "Keyword safety filter block"
         if "python" in last_msg_lower:
             reason = "Python coding help request blocked by keyword safety filter"
         logger.warning(f"🚨 [Guardrails] BLOCKED user input locally via keyword filter: '{last_msg_raw}' {user_log}")
-        return {
-            "messages": [AIMessage(content=_OFF_TOPIC_REPLY)],
-            "guardrail_blocked": True,
-            "guardrail_reason": reason,
-            "guardrail_category": "off_topic"
-        }
+        return _guardrail_block(reason)
 
     # 3. Default to passing to the Tutor node (latency-optimized bypass)
-    logger.info(f"✅ [Guardrails] Bypassing LLM classification node to save latency. Passing directly to Tutor. {user_log}")
-    return {
-        "guardrail_blocked": False,
-        "guardrail_reason": "Latency-optimized bypass",
-        "guardrail_category": "spanish_learning"
-    }
+    logger.info(f"[Guardrails] Short local pre-check passed. Passing directly to Tutor. {user_log}")
+    return _guardrail_pass("Short local pre-check")
 
 
 # ============================================================================

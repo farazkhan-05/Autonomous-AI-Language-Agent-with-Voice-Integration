@@ -23,6 +23,7 @@ router = APIRouter(
 )
 
 ANONYMOUS_GLOBAL_CHAT_MESSAGE_LIMIT = 3
+MAX_HISTORY_CHARS = 4000
 
 
 def _prepare_tutor_messages_with_fresh_db(state_input: dict):
@@ -38,6 +39,26 @@ def _save_memory_with_fresh_db(state_input: dict) -> None:
     with SessionLocal() as background_db:
         save_memory_node(state_input, db=background_db)
         background_db.commit()
+
+
+def _build_history_messages_with_budget(db_history) -> list:
+    history_messages = []
+    current_chars = 0
+
+    for msg in db_history:
+        content = msg.content or ""
+        if current_chars + len(content) > MAX_HISTORY_CHARS:
+            break
+
+        if msg.role == "user":
+            history_message = HumanMessage(content=content)
+        else:
+            history_message = AIMessage(content=content)
+
+        history_messages.insert(0, history_message)
+        current_chars += len(content)
+
+    return history_messages
 
 
 def _is_anonymous_firebase_user(current_user: dict) -> bool:
@@ -217,15 +238,8 @@ def send_chat_message(
         .order_by(ChatMessage.created_at.desc())
         .limit(10)
     )
-    db_history = reversed(db.scalars(history_query).all())
-
-    # Convert Postgres database history to LangChain message formats
-    history_messages = []
-    for msg in db_history:
-        if msg.role == "user":
-            history_messages.append(HumanMessage(content=msg.content))
-        else:
-            history_messages.append(AIMessage(content=msg.content))
+    db_history = db.scalars(history_query).all()
+    history_messages = _build_history_messages_with_budget(db_history)
 
     # Append the new user message
     new_message = HumanMessage(content=payload.message)
@@ -341,15 +355,8 @@ def send_chat_message_stream(
         .order_by(ChatMessage.created_at.desc())
         .limit(10)
     )
-    db_history = reversed(db.scalars(history_query).all())
-
-    # Convert Postgres database history to LangChain message formats
-    history_messages = []
-    for msg in db_history:
-        if msg.role == "user":
-            history_messages.append(HumanMessage(content=msg.content))
-        else:
-            history_messages.append(AIMessage(content=msg.content))
+    db_history = db.scalars(history_query).all()
+    history_messages = _build_history_messages_with_budget(db_history)
 
     # Append the new user message
     new_message = HumanMessage(content=payload.message)
@@ -371,8 +378,8 @@ def send_chat_message_stream(
             # 1. Yield active session ID immediately so client can bind new conversations instantly
             yield f"data: {json.dumps({'session_id': active_session_id})}\n\n"
 
-            # 2. Run fast local guardrails (pure Python, no I/O, <1ms)
-            guardrail_res = guardrails_node(state_input)
+            # 2. Run guardrails off the event loop; long inputs may call the classifier.
+            guardrail_res = await asyncio.to_thread(guardrails_node, state_input)
 
             if guardrail_res.get("guardrail_blocked", False):
                 # Guardrails blocked: stream the off-topic reply word-by-word for premium feel
