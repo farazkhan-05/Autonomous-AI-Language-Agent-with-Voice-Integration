@@ -44,8 +44,11 @@ def complete_lesson(progress: ProgressCreate, db: Session = Depends(get_db), cur
     if not user:
         user = User(id=progress.user_id)
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError:
+            db.rollback()
 
     # Save progress
     db_progress = CompletedLesson(
@@ -68,4 +71,3 @@ def complete_lesson(progress: ProgressCreate, db: Session = Depends(get_db), cur
         )
         existing = db.scalars(query).first()
         return existing
-

@@ -231,6 +231,23 @@ class TestBackendIntegrationFlows(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["explanation"], "Short explanation")
 
+    @patch("app.routers.chat.generate_explanation", return_value="Short explanation")
+    def test_explain_endpoint_requires_authentication(self, _mock_explain):
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            response = self.client.post(
+                "/chat/explain",
+                json={
+                    "spanish_sentence": "Tengo hambre",
+                    "english_translation": "I am hungry",
+                },
+            )
+        finally:
+            app.dependency_overrides[get_current_user] = _override_current_user
+
+        self.assertIn(response.status_code, {401, 403})
+        _mock_explain.assert_not_called()
+
     def test_explain_endpoint_invalid_payload_returns_422(self):
         response = self.client.post(
             "/chat/explain",

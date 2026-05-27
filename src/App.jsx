@@ -10,12 +10,21 @@ import Layout from './components/layout/Layout';
 import CourseMap from './pages/CourseMap';
 import LessonPlayer from './pages/LessonPlayer';
 
+const readStoredDarkMode = () => {
+  const saved = localStorage.getItem('darkMode');
+  if (!saved) return false;
+
+  try {
+    return JSON.parse(saved) === true;
+  } catch {
+    localStorage.removeItem('darkMode');
+    return false;
+  }
+};
+
 function App() {
   // (Your existing Dark Mode logic stays exactly the same)
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
-  });
+  const [darkMode, setDarkMode] = useState(readStoredDarkMode);
 
   const theme = createAppTheme(darkMode ? 'dark' : 'light');
 

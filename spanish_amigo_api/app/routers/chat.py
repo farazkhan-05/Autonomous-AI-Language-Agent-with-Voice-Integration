@@ -498,7 +498,7 @@ def delete_session(session_id: int, db: Session = Depends(get_db), current_user:
 
 
 @router.post("/explain", response_model=ExplainResponse)
-def explain_sentence(payload: ExplainRequest):
+def explain_sentence(payload: ExplainRequest, _current_user: dict = Depends(get_current_user)):
     try:
         explanation_content = generate_explanation(payload.spanish_sentence, payload.english_translation)
         return ExplainResponse(explanation=explanation_content)

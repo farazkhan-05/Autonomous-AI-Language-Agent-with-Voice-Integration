@@ -13,6 +13,18 @@ const normalizeLessonIds = (ids) => {
   return [...new Set(normalized)].sort((a, b) => a - b);
 };
 
+const readLocalProgress = () => {
+  const saved = localStorage.getItem('spanishProgress');
+  if (!saved) return [];
+
+  try {
+    return normalizeLessonIds(JSON.parse(saved));
+  } catch {
+    localStorage.removeItem('spanishProgress');
+    return [];
+  }
+};
+
 export const ProgressProvider = ({ children }) => {
   const { user } = useAuth(); // Check who is logged in
   const [completedLessons, setCompletedLessons] = useState([]);
@@ -21,8 +33,7 @@ export const ProgressProvider = ({ children }) => {
   useEffect(() => {
     const loadProgress = async () => {
       // Fetch local storage fallback
-      const saved = localStorage.getItem('spanishProgress');
-      const localProgress = normalizeLessonIds(saved ? JSON.parse(saved) : []);
+      const localProgress = readLocalProgress();
 
       if (user) {
         // --- SCENARIO A: USER IS LOGGED IN ---

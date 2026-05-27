@@ -21,8 +21,8 @@ const RevealSlide = ({ data, onNext }) => {
           const token = await user.getIdToken();
           headers['Authorization'] = `Bearer ${token}`;
         } catch (tokenError) {
-          // /chat/explain is public, so we continue even if token refresh fails.
-          console.warn("Token fetch failed for /chat/explain, continuing without auth header.", tokenError);
+          console.warn("Token fetch failed for /chat/explain.", tokenError);
+          throw tokenError;
         }
       }
 
