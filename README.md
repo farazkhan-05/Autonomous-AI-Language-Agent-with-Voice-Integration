@@ -1,4 +1,4 @@
-# LangGraph Orchestrated AI Workflow with SSE Streaming & Secure Persistence
+# SpanishAmigo: Production RAG Application with Real-Time AI Chat
 
 SpanishAmigo is the product implementation of this system: a full-stack Spanish learning app with structured lessons, saved progress, and an AI tutor named Lumi. The frontend is built with React and Vite. The backend is a FastAPI service that verifies Firebase ID tokens, stores user progress and chat history in Postgres, and streams AI tutor responses over Server-Sent Events.
 
